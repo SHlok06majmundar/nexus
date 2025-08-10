@@ -27,6 +27,7 @@ const io = new Server(server, {
 
 const PORT = 5000;
 const activeRooms = new Map(); // Track active meeting rooms
+const peerConnections = new Map(); // Track WebRTC peer connections
 
 app.get('/', (req, res) => {
   res.send('Hello from backend!');
@@ -53,7 +54,9 @@ io.on('connection', (socket) => {
     }
     activeRooms.get(meetingId).set(socket.id, {
       id: socket.id,
-      username
+      username,
+      hasAudio: true,
+      hasVideo: true
     });
     
     // Notify others in the room
@@ -65,13 +68,23 @@ io.on('connection', (socket) => {
     // Send the list of participants to the new joiner
     const participants = Array.from(activeRooms.get(meetingId).values()).map(user => ({
       id: user.id,
-      username: user.username
+      username: user.username,
+      hasAudio: user.hasAudio,
+      hasVideo: user.hasVideo
     }));
     
     socket.emit('room-users', participants);
     
     // Broadcast to everyone that user list has changed
     io.to(meetingId).emit('room-users-changed', participants);
+    
+    // Notify others to send their signals to the new participant
+    socket.to(meetingId).emit('user-joined', { 
+      id: socket.id, 
+      username,
+      hasAudio: true,
+      hasVideo: true
+    });
   });
   
   // Handle room-specific messages
@@ -90,6 +103,48 @@ io.on('connection', (socket) => {
     
     // Send to everyone else in the room
     socket.to(meetingId).emit('room-message', messageObj);
+  });
+  
+  // WebRTC Signaling
+  socket.on('offer', ({ targetId, offer }) => {
+    socket.to(targetId).emit('offer', {
+      offer,
+      offererId: socket.id,
+      offererUsername: socket.username
+    });
+  });
+  
+  socket.on('answer', ({ targetId, answer }) => {
+    socket.to(targetId).emit('answer', {
+      answer,
+      answererId: socket.id
+    });
+  });
+  
+  socket.on('ice-candidate', ({ targetId, candidate }) => {
+    socket.to(targetId).emit('ice-candidate', {
+      candidate,
+      senderId: socket.id
+    });
+  });
+  
+  // Media Stream Status Updates
+  socket.on('media-status-changed', ({ meetingId, hasAudio, hasVideo }) => {
+    if (!socket.meetingId || !activeRooms.has(meetingId)) return;
+    
+    // Update user's media status
+    const user = activeRooms.get(meetingId).get(socket.id);
+    if (user) {
+      user.hasAudio = hasAudio;
+      user.hasVideo = hasVideo;
+      
+      // Broadcast updated status to all participants
+      io.to(meetingId).emit('user-media-status-changed', {
+        userId: socket.id,
+        hasAudio,
+        hasVideo
+      });
+    }
   });
   
   // Handle user leaving a room
@@ -126,9 +181,18 @@ function handleUserLeaving(socket, meetingId) {
       // Update the participants list
       const participants = Array.from(roomUsers.values()).map(user => ({
         id: user.id,
-        username: user.username
+        username: user.username,
+        hasAudio: user.hasAudio,
+        hasVideo: user.hasVideo
       }));
       
+      // Notify others to clean up their WebRTC connections
+      socket.to(meetingId).emit('user-left', {
+        id: socket.id,
+        username: socket.username
+      });
+      
+      // Update the participants list for everyone
       io.to(meetingId).emit('room-users-changed', participants);
     }
   }
