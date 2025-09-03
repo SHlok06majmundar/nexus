@@ -1,0 +1,252 @@
+/* Import modern fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-primary: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-secondary: 'Montserrat', 'Segoe UI', Roboto, sans-serif;
+  
+  /* Main color scheme */
+  --color-primary: #6a11cb;
+  --color-secondary: #2575fc;
+  --color-accent: #00cfdd;
+  --color-warning: #ff9800;
+  --color-error: #f44336;
+  --color-success: #4caf50;
+  
+  /* Background gradients */
+  --gradient-primary: linear-gradient(135deg, #232526 0%, #414345 100%);
+  --gradient-accent: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
+  --gradient-secondary: linear-gradient(135deg, #0c0e14 0%, #1a1f35 100%);
+  --gradient-card: linear-gradient(135deg, rgba(30,30,40,0.95), rgba(20,20,30,0.97));
+  
+  /* Text colors */
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --text-muted: #b3b3b3;
+  --text-dark: #333333;
+  
+  /* Card styling */
+  --card-radius: 16px;
+  --button-radius: 12px;
+  --input-radius: 12px;
+  
+  /* Animation speeds */
+  --transition-fast: 0.2s;
+  --transition-medium: 0.3s;
+  --transition-slow: 0.5s;
+  
+  /* Shadows */
+  --shadow-soft: 0 8px 32px rgba(0, 0, 0, 0.15);
+  --shadow-strong: 0 10px 40px rgba(0, 0, 0, 0.3);
+  --shadow-inner: inset 0 0 10px rgba(0, 0, 0, 0.15);
+  --shadow-glow: 0 0 20px rgba(106, 17, 203, 0.3);
+  
+  /* Global settings */
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-primary);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-primary);
+  background-color: #0c0e14;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--gradient-primary);
+  overflow-x: hidden;
+}
+
+a {
+  font-weight: 500;
+  color: var(--color-secondary);
+  text-decoration: inherit;
+  transition: color var(--transition-fast) ease;
+}
+
+a:hover {
+  color: var(--color-primary);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-secondary);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.5em;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(106, 17, 203, 0.5);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(106, 17, 203, 0.8);
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 10px rgba(106, 17, 203, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(106, 17, 203, 0.7); }
+  100% { box-shadow: 0 0 10px rgba(106, 17, 203, 0.5); }
+}
+
+/* Video meeting specific styles */
+video {
+  object-fit: cover;
+  background: #000;
+  border-radius: var(--card-radius);
+}
+
+.video-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background-color: rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-soft);
+  transition: all 0.3s ease;
+}
+
+.video-container:hover {
+  box-shadow: var(--shadow-strong);
+}
+
+.video-avatar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  color: white;
+  font-weight: 600;
+  z-index: 1;
+}
+
+.video-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.video-container:hover .video-controls {
+  opacity: 1;
+}
+
+/* Add responsive utilities */
+.hide-on-mobile {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .hide-on-mobile {
+    display: block;
+  }
+}
+
+.animate-in {
+  animation: fadeIn var(--transition-medium) ease-out forwards;
+}
+
+/* Modern inputs */
+input, textarea, select {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-radius: var(--input-radius);
+  padding: 12px 16px;
+  font-size: 1rem;
+  transition: all var(--transition-fast) ease;
+  font-family: var(--font-primary);
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 2px rgba(106, 17, 203, 0.3);
+}
+
+::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Button resets */
+button {
+  font-family: var(--font-primary);
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all var(--transition-fast) ease;
+}
+
+/* Utility classes */
+.glassmorphism {
+  background: rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--card-radius);
+}
+
+.text-gradient {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
