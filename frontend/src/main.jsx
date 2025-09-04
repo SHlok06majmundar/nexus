@@ -7,6 +7,7 @@ import Dashboard from './Dashboard.jsx';
 import Meet from './Meet.jsx';
 import Landing from './Landing.jsx';
 import { ClerkProvider } from '@clerk/clerk-react';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -15,9 +16,9 @@ createRoot(document.getElementById('root')).render(
     <ClerkProvider publishableKey={clerkPubKey}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/meet/:meetingId" element={<Meet />} />
+          <Route path="/" element={<ErrorBoundary><Landing /></ErrorBoundary>} />
+          <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+          <Route path="/meet/:meetingId" element={<ErrorBoundary><Meet /></ErrorBoundary>} />
         </Routes>
       </BrowserRouter>
     </ClerkProvider>

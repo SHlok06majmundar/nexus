@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import {
-	Box, Typography, Button, TextField, IconButton, Paper, CircularProgress
+	Box, Typography, Button, TextField, IconButton, Paper, CircularProgress, Avatar
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
@@ -184,71 +184,334 @@ export default function Meet() {
 
 	if (loading) {
 		return (
-			<Box sx={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#121212' }}>
-				<CircularProgress size={60} sx={{ color: '#1976d2' }} />
-				<Typography variant="h6" sx={{ mt: 2, color: '#fff' }}>
+			<Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#fff', background: 'var(--gradient-primary)' }}>
+				<CircularProgress size={60} sx={{ color: 'var(--color-primary)' }} />
+				<Typography variant="h6" sx={{ mt: 4, color: 'var(--text-primary)', fontWeight: 500 }}>
 					Connecting to meeting...
+				</Typography>
+				<Typography variant="body2" sx={{ mt: 1, color: 'var(--text-secondary)' }}>
+					Setting up your video call
 				</Typography>
 			</Box>
 		);
 	}
 
 	return (
-		<Box sx={{ height: '100vh', bgcolor: '#f5f7fa', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, Arial, sans-serif' }}>
+		<Box sx={{ height: '100vh', bgcolor: 'var(--gradient-primary)', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-primary)' }}>
 			{/* Meeting Info */}
-			<Box sx={{ p: 2, bgcolor: '#1976d2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-				<Typography variant="h6">Meeting ID: {meetingId}</Typography>
-				<Typography variant="body2">User: {username}</Typography>
+			<Box sx={{ 
+				p: { xs: 1.5, sm: 2 }, 
+				bgcolor: '#fff', 
+				color: 'var(--text-primary)', 
+				display: 'flex', 
+				alignItems: 'center', 
+				justifyContent: 'space-between',
+				boxShadow: 'var(--shadow-soft)',
+				position: 'relative',
+				zIndex: 5,
+				borderBottom: '1px solid rgba(0,0,0,0.05)'
+			}}>
+				<Box sx={{ display: 'flex', alignItems: 'center' }}>
+					<Typography 
+						variant="h6" 
+						className="text-gradient" 
+						sx={{ 
+							fontWeight: 600, 
+							fontSize: { xs: '1rem', sm: '1.25rem' },
+							display: { xs: 'none', sm: 'block' }
+						}}
+					>
+						Nexus Meet
+					</Typography>
+					<Box sx={{ 
+						display: 'flex', 
+						alignItems: 'center', 
+						borderLeft: { xs: 'none', sm: '1px solid rgba(0,0,0,0.08)' }, 
+						ml: { xs: 0, sm: 2 }, 
+						pl: { xs: 0, sm: 2 }
+					}}>
+						<Typography 
+							variant="body2" 
+							sx={{ 
+								fontFamily: 'monospace', 
+								fontWeight: 'bold', 
+								color: 'var(--text-secondary)',
+								fontSize: { xs: '0.75rem', sm: '0.875rem' }
+							}}
+						>
+							Meeting: {meetingId}
+						</Typography>
+					</Box>
+				</Box>
+				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+					<Typography 
+						variant="body2" 
+						sx={{ 
+							color: 'var(--text-secondary)', 
+							fontWeight: 500,
+							display: { xs: 'none', sm: 'block' }
+						}}
+					>
+						{username}
+					</Typography>
+					<Button 
+						variant="outlined" 
+						size="small" 
+						onClick={leaveMeeting}
+						startIcon={<CallEndIcon />}
+						sx={{ 
+							borderColor: 'var(--color-error)', 
+							color: 'var(--color-error)',
+							borderRadius: 'var(--button-radius)',
+							'&:hover': {
+								borderColor: 'var(--color-error)',
+								backgroundColor: 'rgba(244, 67, 54, 0.05)'
+							},
+							display: { xs: 'none', sm: 'flex' }
+						}}
+					>
+						Leave
+					</Button>
+				</Box>
 			</Box>
 			{/* Video Grid */}
-			<Box sx={{ flex: 1, display: 'flex', gap: 2, p: 2, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', bgcolor: '#e3f2fd' }}>
-				<Paper elevation={3} sx={{ p: 1, bgcolor: '#fff', borderRadius: 2 }}>
-					<video ref={localVideoRef} autoPlay playsInline muted style={{ width: 240, borderRadius: 8, background: '#000' }} />
+			<Box sx={{ 
+				flex: 1, 
+				display: 'flex', 
+				flexWrap: 'wrap', 
+				gap: { xs: 1, sm: 2, md: 3 }, 
+				p: { xs: 1, sm: 2, md: 3 }, 
+				alignItems: 'center', 
+				justifyContent: 'center', 
+				bgcolor: 'rgba(245, 247, 250, 0.5)',
+				overflowY: 'auto'
+			}}>
+				<Paper elevation={2} sx={{ 
+					p: { xs: 1, sm: 2 }, 
+					bgcolor: '#fff', 
+					borderRadius: 'var(--card-radius)',
+					boxShadow: 'var(--shadow-soft)',
+					position: 'relative',
+					overflow: 'hidden',
+					width: { xs: '100%', sm: 300, md: 320, lg: 360 },
+					maxWidth: '100%'
+				}}>
+					<video 
+						ref={localVideoRef} 
+						autoPlay 
+						playsInline 
+						muted 
+						style={{ 
+							width: '100%', 
+							borderRadius: 8, 
+							background: '#000',
+							aspectRatio: '16/9',
+							objectFit: 'cover'
+						}} 
+					/>
 					{!streamRef.current && (
-						<Typography variant="body2" sx={{ color: 'red', textAlign: 'center', mt: 2 }}>
+						<Typography variant="body2" sx={{ color: 'var(--color-error)', textAlign: 'center', mt: 2, fontWeight: 500 }}>
 							Camera stream not available
 						</Typography>
 					)}
-					<Typography variant="caption" sx={{ display: 'block', textAlign: 'center', mt: 1 }}>You</Typography>
+					<Box sx={{
+						position: 'absolute',
+						bottom: 8,
+						left: 8,
+						backgroundColor: 'rgba(0,0,0,0.6)',
+						borderRadius: 1,
+						px: 1,
+						py: 0.5
+					}}>
+						<Typography variant="caption" sx={{ color: '#fff', fontWeight: 500 }}>
+							You {!videoOn && '(video off)'}
+						</Typography>
+					</Box>
+					{!videoOn && (
+						<Box sx={{
+							position: 'absolute',
+							top: 0,
+							left: 0,
+							right: 0,
+							bottom: 0,
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							backgroundColor: 'rgba(0,0,0,0.7)',
+						}}>
+							<Avatar 
+								sx={{ 
+									width: 80, 
+									height: 80, 
+									bgcolor: 'var(--color-primary)',
+									fontSize: '2rem',
+									fontWeight: 'bold'
+								}}
+							>
+								{username.charAt(0).toUpperCase()}
+							</Avatar>
+						</Box>
+					)}
 				</Paper>
 				{peers.map(({ id }) => (
-					<Paper key={id} elevation={3} sx={{ p: 1, bgcolor: '#fff', borderRadius: 2 }}>
-						<video id={'video-' + id} autoPlay playsInline style={{ width: 240, borderRadius: 8, background: '#000' }} />
-						<Typography variant="caption" sx={{ display: 'block', textAlign: 'center', mt: 1 }}>Peer</Typography>
+					<Paper key={id} elevation={2} sx={{ 
+						p: { xs: 1, sm: 2 }, 
+						bgcolor: '#fff', 
+						borderRadius: 'var(--card-radius)',
+						boxShadow: 'var(--shadow-soft)',
+						position: 'relative',
+						overflow: 'hidden',
+						width: { xs: '100%', sm: 300, md: 320, lg: 360 },
+						maxWidth: '100%'
+					}}>
+						<video 
+							id={'video-' + id} 
+							autoPlay 
+							playsInline 
+							style={{ 
+								width: '100%', 
+								borderRadius: 8, 
+								background: '#000',
+								aspectRatio: '16/9',
+								objectFit: 'cover'
+							}} 
+						/>
+						<Box sx={{
+							position: 'absolute',
+							bottom: 8,
+							left: 8,
+							backgroundColor: 'rgba(0,0,0,0.6)',
+							borderRadius: 1,
+							px: 1,
+							py: 0.5
+						}}>
+							<Typography variant="caption" sx={{ color: '#fff', fontWeight: 500 }}>
+								Participant
+							</Typography>
+						</Box>
 					</Paper>
 				))}
 			</Box>
 			{/* Controls */}
-			<Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, p: 2, bgcolor: '#fff' }}>
-				<IconButton onClick={toggleMic} sx={{ bgcolor: micOn ? '#c8e6c9' : '#ffcdd2', color: micOn ? '#388e3c' : '#d32f2f', borderRadius: 2 }}>
+			<Box sx={{ 
+				display: 'flex', 
+				justifyContent: 'center', 
+				alignItems: 'center',
+				gap: { xs: 1, sm: 2 }, 
+				p: { xs: 1.5, sm: 2 }, 
+				bgcolor: '#fff',
+				boxShadow: '0 -2px 10px rgba(0,0,0,0.05)',
+				borderTop: '1px solid rgba(0,0,0,0.05)',
+				position: 'relative',
+				zIndex: 5
+			}}>
+				<IconButton 
+					onClick={toggleMic} 
+					sx={{ 
+						bgcolor: micOn ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)', 
+						color: micOn ? 'var(--color-success)' : 'var(--color-error)', 
+						borderRadius: 'var(--button-radius)',
+						p: { xs: 1, sm: 1.5 }
+					}}
+				>
 					{micOn ? <MicIcon /> : <MicOffIcon />}
 				</IconButton>
-				<IconButton onClick={toggleVideo} sx={{ bgcolor: videoOn ? '#bbdefb' : '#ffe0b2', color: videoOn ? '#1976d2' : '#f57c00', borderRadius: 2 }}>
+				<IconButton 
+					onClick={toggleVideo} 
+					sx={{ 
+						bgcolor: videoOn ? 'rgba(33, 150, 243, 0.1)' : 'rgba(255, 152, 0, 0.1)', 
+						color: videoOn ? 'var(--color-secondary)' : 'var(--color-warning)', 
+						borderRadius: 'var(--button-radius)',
+						p: { xs: 1, sm: 1.5 }
+					}}
+				>
 					{videoOn ? <VideocamIcon /> : <VideocamOffIcon />}
 				</IconButton>
-				<IconButton onClick={leaveMeeting} sx={{ bgcolor: '#f8bbd0', color: '#d81b60', borderRadius: 2 }}>
+				<IconButton 
+					onClick={leaveMeeting} 
+					sx={{ 
+						bgcolor: 'rgba(244, 67, 54, 0.1)', 
+						color: 'var(--color-error)', 
+						borderRadius: 'var(--button-radius)',
+						p: { xs: 1, sm: 1.5 }
+					}}
+				>
 					<CallEndIcon />
 				</IconButton>
-				<IconButton onClick={() => setChatOpen(!chatOpen)} sx={{ bgcolor: chatOpen ? '#e1bee7' : '#fff', color: chatOpen ? '#6a1b9a' : '#1976d2', borderRadius: 2 }}>
+				<IconButton 
+					onClick={() => setChatOpen(!chatOpen)} 
+					sx={{ 
+						bgcolor: chatOpen ? 'rgba(106, 27, 154, 0.1)' : 'rgba(0, 0, 0, 0.05)', 
+						color: chatOpen ? 'var(--color-primary)' : 'var(--text-secondary)', 
+						borderRadius: 'var(--button-radius)',
+						p: { xs: 1, sm: 1.5 }
+					}}
+				>
 					<ChatIcon />
 				</IconButton>
 			</Box>
 			{/* Chat Sidebar */}
 			{chatOpen && (
-				<Box sx={{ position: 'fixed', right: 0, top: 0, width: 320, height: '100vh', bgcolor: '#fff', boxShadow: 6, zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-					<Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#1976d2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-						<Typography variant="h6">Chat</Typography>
-						<Button size="small" onClick={() => setChatOpen(false)} sx={{ color: '#fff' }}>Close</Button>
+				<Box sx={{ 
+					position: 'fixed', 
+					right: 0, 
+					top: 0, 
+					width: { xs: '100%', sm: 320 }, 
+					height: '100vh', 
+					bgcolor: '#fff', 
+					boxShadow: 'var(--shadow-strong)', 
+					zIndex: 200, 
+					display: 'flex', 
+					flexDirection: 'column'
+				}}>
+					<Box sx={{ 
+						p: 2, 
+						borderBottom: '1px solid rgba(0,0,0,0.1)', 
+						bgcolor: 'var(--color-primary)', 
+						color: '#fff', 
+						display: 'flex', 
+						alignItems: 'center', 
+						justifyContent: 'space-between'
+					}}>
+						<Typography variant="subtitle1" fontWeight={600}>Chat</Typography>
+						<Button 
+							size="small" 
+							variant="outlined"
+							onClick={() => setChatOpen(false)} 
+							sx={{ 
+								color: '#fff', 
+								borderColor: 'rgba(255,255,255,0.5)',
+								'&:hover': {
+									borderColor: '#fff',
+									backgroundColor: 'rgba(255,255,255,0.1)'
+								}
+							}}
+						>
+							Close
+						</Button>
 					</Box>
-					<Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+					<Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: 'rgba(245, 247, 250, 0.5)' }}>
 						{messages.map((msg, idx) => (
 							<Box key={idx} sx={{ mb: 2, textAlign: msg.user === username ? 'right' : 'left' }}>
-								<Typography variant="caption" sx={{ color: '#888', fontSize: 12 }}>{msg.user}</Typography>
-								<Paper sx={{ display: 'inline-block', p: 1, bgcolor: msg.user === username ? '#e3f2fd' : '#f5f7fa', color: '#1976d2', borderRadius: 2, maxWidth: '80%', fontSize: 14 }}>{msg.text}</Paper>
+								<Typography variant="caption" sx={{ color: 'var(--text-muted)', fontSize: 12, fontWeight: 500 }}>
+									{msg.user}
+								</Typography>
+								<Paper sx={{ 
+									display: 'inline-block', 
+									p: 1.5, 
+									bgcolor: msg.user === username ? 'rgba(106, 17, 203, 0.05)' : '#fff', 
+									color: 'var(--text-primary)', 
+									borderRadius: 2, 
+									maxWidth: '85%', 
+									fontSize: 14,
+									boxShadow: 'var(--shadow-soft)'
+								}}>
+									{msg.text}
+								</Paper>
 							</Box>
 						))}
 					</Box>
-					<Box sx={{ p: 2, borderTop: '1px solid #e0e0e0', display: 'flex', alignItems: 'center', gap: 1 }}>
+					<Box sx={{ p: 2, borderTop: '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: 1 }}>
 						<TextField
 							fullWidth
 							variant="outlined"
@@ -257,10 +520,26 @@ export default function Meet() {
 							value={input}
 							onChange={e => setInput(e.target.value)}
 							onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }}
-							sx={{ bgcolor: '#f5f7fa', color: '#1976d2', borderRadius: 2, fontSize: 14 }}
-							InputProps={{ style: { color: '#1976d2' } }}
+							sx={{ 
+								borderRadius: 'var(--input-radius)',
+								'& .MuiOutlinedInput-root': {
+									borderRadius: 'var(--input-radius)',
+									backgroundColor: 'rgba(245, 247, 250, 0.8)'
+								}
+							}}
 						/>
-						<IconButton color="primary" onClick={sendMessage} sx={{ ml: 1, bgcolor: '#e3f2fd', color: '#1976d2', borderRadius: 2 }}>
+						<IconButton 
+							color="primary" 
+							onClick={sendMessage} 
+							sx={{ 
+								bgcolor: 'var(--color-primary)', 
+								color: 'white', 
+								borderRadius: 'var(--button-radius)',
+								'&:hover': {
+									bgcolor: 'var(--color-secondary)',
+								}
+							}}
+						>
 							<ChatIcon />
 						</IconButton>
 					</Box>

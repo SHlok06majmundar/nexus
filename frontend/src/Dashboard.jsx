@@ -5,7 +5,8 @@ import { useTheme } from '@mui/material/styles';
 import { 
   useMediaQuery, Box, Avatar, Typography, Paper, Button, 
   Alert, Snackbar, Grid, TextField, IconButton, Tooltip,
-  Card, CardContent, Divider, Chip, CircularProgress, List, ListItem
+  Card, CardContent, Divider, Chip, CircularProgress, List, ListItem,
+  Container
 } from '@mui/material';
 
 // Import icons
@@ -182,12 +183,13 @@ export default function Dashboard() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
           backdropFilter: 'blur(10px)',
-          backgroundColor: 'rgba(10, 10, 20, 0.5)',
+          backgroundColor: 'rgba(255, 255, 255, 0.85)',
           position: 'sticky',
           top: 0,
           zIndex: 10,
+          boxShadow: 'var(--shadow-soft)',
         }}
       >
         <Typography 
@@ -205,7 +207,8 @@ export default function Dashboard() {
             variant="body2" 
             sx={{ 
               color: 'var(--text-secondary)',
-              display: { xs: 'none', sm: 'block' }
+              display: { xs: 'none', sm: 'block' },
+              fontWeight: 500
             }}
           >
             {user?.fullName || user?.username}
@@ -215,7 +218,7 @@ export default function Dashboard() {
               onClick={() => signOut()}
               sx={{ 
                 color: 'var(--text-muted)',
-                '&:hover': { color: 'var(--text-primary)' }
+                '&:hover': { color: 'var(--color-primary)' }
               }}
             >
               <LogoutIcon fontSize="small" />
@@ -236,50 +239,49 @@ export default function Dashboard() {
       </Box>
       
       {/* Main content */}
-      <Box 
-        sx={{ 
-          flex: 1,
-          width: '100%',
-          maxWidth: '1200px',
-          mx: 'auto',
-          px: { xs: 2, md: 4 },
-          py: { xs: 3, md: 4 },
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: { xs: 4, md: 6 },
-        }}
-      >
-        {/* Left column - Start/Join meeting card */}
-        <Box sx={{ 
-          flex: 1,
-          maxWidth: { md: '600px' },
-        }}>
-          <Card 
-            elevation={4} 
-            className="glassmorphism"
-            sx={{ 
-              borderRadius: 'var(--card-radius)',
-              p: { xs: 2, md: 4 },
-              mb: 4,
-              backdropFilter: 'blur(10px)',
-              backgroundColor: 'rgba(15, 15, 25, 0.6)',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-            }}
-          >
-            <CardContent sx={{ p: 0 }}>
-              <Box sx={{ textAlign: 'center', mb: 4 }}>
-                <Typography 
-                  variant="h4" 
-                  fontWeight="700"
-                  className="text-gradient" 
-                  sx={{ mb: 1 }}
-                >
-                  {meetingId ? 'Join Meeting' : 'Start New Meeting'}
-                </Typography>
-                <Typography variant="body1" sx={{ color: 'var(--text-muted)' }}>
-                  Set up your preferences before starting
-                </Typography>
-              </Box>
+      <Container maxWidth="xl">
+        <Box 
+          sx={{ 
+            flex: 1,
+            width: '100%',
+            mx: 'auto',
+            px: { xs: 1, sm: 2, md: 3 },
+            py: { xs: 3, md: 4 },
+            display: 'flex',
+            flexDirection: { xs: 'column', lg: 'row' },
+            gap: { xs: 4, md: 6 },
+          }}
+        >
+          {/* Left column - Start/Join meeting card */}
+          <Box sx={{ 
+            flex: 1,
+            width: '100%',
+          }}>
+            <Card 
+              elevation={2}
+              sx={{ 
+                borderRadius: 'var(--card-radius)',
+                p: { xs: 2, md: 4 },
+                mb: 4,
+                backgroundColor: '#fff',
+                border: '1px solid rgba(0, 0, 0, 0.05)',
+                boxShadow: 'var(--shadow-soft)',
+              }}
+            >
+              <CardContent sx={{ p: 0 }}>
+                <Box sx={{ textAlign: 'center', mb: 4 }}>
+                  <Typography 
+                    variant="h4" 
+                    fontWeight="700"
+                    className="text-gradient" 
+                    sx={{ mb: 1 }}
+                  >
+                    {meetingId ? 'Join Meeting' : 'Start New Meeting'}
+                  </Typography>
+                  <Typography variant="body1" sx={{ color: 'var(--text-secondary)' }}>
+                    Set up your preferences before starting
+                  </Typography>
+                </Box>
               
               <Box sx={{ mb: 3 }}>
                 <Typography 
@@ -301,16 +303,16 @@ export default function Dashboard() {
                   InputProps={{
                     sx: {
                       borderRadius: 'var(--input-radius)',
-                      bgcolor: 'rgba(0, 0, 0, 0.2)',
+                      bgcolor: 'rgba(245, 247, 250, 0.8)',
                       color: 'var(--text-primary)',
                       '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderColor: 'rgba(0, 0, 0, 0.1)',
                       },
                       '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderColor: 'rgba(0, 0, 0, 0.2)',
                       },
                       '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'var(--color-secondary)',
+                        borderColor: 'var(--color-primary)',
                       }
                     }
                   }}
@@ -329,7 +331,7 @@ export default function Dashboard() {
                   Device settings
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid lg={6} md={6} sm={6} xs={6}>
                     <Button
                       fullWidth
                       variant={micOn ? "contained" : "outlined"}
@@ -339,16 +341,17 @@ export default function Dashboard() {
                         py: 1.5,
                         borderRadius: 'var(--button-radius)',
                         backgroundColor: micOn ? 'var(--color-primary)' : 'transparent',
-                        borderColor: micOn ? 'transparent' : 'rgba(255,255,255,0.2)',
+                        borderColor: micOn ? 'var(--color-primary)' : 'rgba(0,0,0,0.2)',
+                        color: micOn ? 'white' : 'var(--color-primary)',
                         '&:hover': {
-                          backgroundColor: micOn ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)',
+                          backgroundColor: micOn ? 'var(--color-secondary)' : 'rgba(106,17,203,0.05)',
                         }
                       }}
                     >
                       {micOn ? 'Mic On' : 'Mic Off'}
                     </Button>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid lg={6} md={6} sm={6} xs={6}>
                     <Button
                       fullWidth
                       variant={videoOn ? "contained" : "outlined"}
@@ -358,9 +361,10 @@ export default function Dashboard() {
                         py: 1.5,
                         borderRadius: 'var(--button-radius)',
                         backgroundColor: videoOn ? 'var(--color-primary)' : 'transparent',
-                        borderColor: videoOn ? 'transparent' : 'rgba(255,255,255,0.2)',
+                        borderColor: videoOn ? 'var(--color-primary)' : 'rgba(0,0,0,0.2)',
+                        color: videoOn ? 'white' : 'var(--color-primary)',
                         '&:hover': {
-                          backgroundColor: videoOn ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)',
+                          backgroundColor: videoOn ? 'var(--color-secondary)' : 'rgba(106,17,203,0.05)',
                         }
                       }}
                     >
@@ -395,16 +399,16 @@ export default function Dashboard() {
                     ) : null,
                     sx: {
                       borderRadius: 'var(--input-radius)',
-                      bgcolor: 'rgba(0, 0, 0, 0.2)',
+                      bgcolor: 'rgba(245, 247, 250, 0.8)',
                       color: 'var(--text-primary)',
                       '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderColor: 'rgba(0, 0, 0, 0.1)',
                       },
                       '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderColor: 'rgba(0, 0, 0, 0.2)',
                       },
                       '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'var(--color-secondary)',
+                        borderColor: 'var(--color-primary)',
                       }
                     }
                   }}
@@ -424,6 +428,7 @@ export default function Dashboard() {
                   background: 'var(--gradient-accent)',
                   borderRadius: 'var(--button-radius)',
                   boxShadow: 'var(--shadow-glow)',
+                  color: 'white',
                   '&:hover': {
                     boxShadow: 'var(--shadow-strong)'
                   },
@@ -445,22 +450,22 @@ export default function Dashboard() {
           {recentMeetings.length > 0 && (
             <Card 
               elevation={2}
-              className="glassmorphism"
               sx={{ 
                 borderRadius: 'var(--card-radius)',
                 overflow: 'hidden',
-                backgroundColor: 'rgba(15, 15, 25, 0.5)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
+                backgroundColor: '#fff',
+                border: '1px solid rgba(0, 0, 0, 0.05)',
+                boxShadow: 'var(--shadow-soft)',
               }}
             >
               <Box sx={{
                 p: 2,
-                backgroundColor: 'rgba(10, 10, 20, 0.5)',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                backgroundColor: 'rgba(106, 17, 203, 0.03)',
+                borderBottom: '1px solid rgba(0, 0, 0, 0.05)',
                 display: 'flex',
                 alignItems: 'center'
               }}>
-                <HistoryIcon sx={{ color: 'var(--color-secondary)', mr: 1 }} />
+                <HistoryIcon sx={{ color: 'var(--color-primary)', mr: 1 }} />
                 <Typography variant="subtitle1" fontWeight="600" color="var(--text-secondary)">
                   Recent Meetings
                 </Typography>
@@ -476,7 +481,7 @@ export default function Dashboard() {
                         justifyContent: 'space-between',
                         transition: 'all 0.2s',
                         '&:hover': {
-                          backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                          backgroundColor: 'rgba(106, 17, 203, 0.03)'
                         }
                       }}
                     >
@@ -489,7 +494,7 @@ export default function Dashboard() {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: 'rgba(106, 17, 203, 0.15)',
+                            backgroundColor: 'rgba(106, 17, 203, 0.1)',
                             mr: 2
                           }}
                         >
@@ -497,7 +502,7 @@ export default function Dashboard() {
                             variant="body1" 
                             fontFamily="monospace"
                             fontWeight="bold"
-                            color="var(--color-secondary)"
+                            color="var(--color-primary)"
                           >
                             {meeting.id.substring(0, 2)}
                           </Typography>
@@ -514,8 +519,8 @@ export default function Dashboard() {
                                 sx={{ 
                                   height: 20, 
                                   fontSize: '0.65rem',
-                                  backgroundColor: 'rgba(106, 17, 203, 0.2)',
-                                  color: 'var(--color-secondary)',
+                                  backgroundColor: 'rgba(106, 17, 203, 0.1)',
+                                  color: 'var(--color-primary)',
                                   borderRadius: '4px'
                                 }}
                               />
@@ -542,11 +547,11 @@ export default function Dashboard() {
                           onClick={() => joinRecentMeeting(meeting.id)}
                           sx={{
                             borderRadius: 'var(--button-radius)',
-                            borderColor: 'rgba(255, 255, 255, 0.1)',
-                            color: 'var(--text-secondary)',
+                            borderColor: 'rgba(106, 17, 203, 0.2)',
+                            color: 'var(--color-primary)',
                             '&:hover': {
-                              borderColor: 'var(--color-secondary)',
-                              backgroundColor: 'rgba(106, 17, 203, 0.1)',
+                              borderColor: 'var(--color-primary)',
+                              backgroundColor: 'rgba(106, 17, 203, 0.05)',
                             }
                           }}
                         >
@@ -555,7 +560,7 @@ export default function Dashboard() {
                       </Box>
                     </Box>
                     {index < recentMeetings.length - 1 && (
-                      <Divider sx={{ backgroundColor: 'rgba(255, 255, 255, 0.03)' }} />
+                      <Divider sx={{ backgroundColor: 'rgba(0, 0, 0, 0.05)' }} />
                     )}
                   </React.Fragment>
                 ))}
@@ -579,7 +584,7 @@ export default function Dashboard() {
               position: 'relative',
               overflow: 'hidden',
               boxShadow: 'var(--shadow-soft)',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(0, 0, 0, 0.05)',
             }}
           >
             {/* Decorative elements */}
@@ -588,7 +593,7 @@ export default function Dashboard() {
               width: '300px',
               height: '300px',
               borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(106, 17, 203, 0.15) 0%, rgba(0, 0, 0, 0) 70%)',
+              background: 'radial-gradient(circle, rgba(106, 17, 203, 0.08) 0%, rgba(255, 255, 255, 0) 70%)',
               top: '-100px',
               right: '-100px',
               zIndex: 0,
@@ -599,7 +604,7 @@ export default function Dashboard() {
               width: '200px',
               height: '200px',
               borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(37, 117, 252, 0.1) 0%, rgba(0, 0, 0, 0) 70%)',
+              background: 'radial-gradient(circle, rgba(37, 117, 252, 0.06) 0%, rgba(255, 255, 255, 0) 70%)',
               bottom: '-50px',
               left: '-50px',
               zIndex: 0,
@@ -640,32 +645,32 @@ export default function Dashboard() {
                     description: 'Secure meeting IDs and user authentication for peace of mind'
                   }
                 ].map((feature, index) => (
-                  <Grid item xs={6} key={index}>
+                  <Grid lg={6} md={6} sm={6} xs={12} key={index}>
                     <Box sx={{ height: '100%' }}>
                       <Box 
                         sx={{ 
-                          p: 2,
+                          p: 3,
                           height: '100%',
                           borderRadius: 'var(--card-radius)',
-                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                          border: '1px solid rgba(255, 255, 255, 0.05)',
+                          backgroundColor: 'rgba(106, 17, 203, 0.03)',
+                          border: '1px solid rgba(106, 17, 203, 0.08)',
                           transition: 'all 0.3s',
                           '&:hover': {
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            backgroundColor: 'rgba(106, 17, 203, 0.05)',
                             transform: 'translateY(-2px)',
-                            boxShadow: '0 5px 15px rgba(0, 0, 0, 0.1)'
+                            boxShadow: 'var(--shadow-soft)'
                           }
                         }}
                       >
                         <Typography 
                           variant="h6" 
                           fontWeight="600" 
-                          color="var(--color-secondary)" 
+                          color="var(--color-primary)" 
                           sx={{ mb: 1 }}
                         >
                           {feature.title}
                         </Typography>
-                        <Typography variant="body2" color="var(--text-muted)">
+                        <Typography variant="body2" color="var(--text-secondary)">
                           {feature.description}
                         </Typography>
                       </Box>
@@ -674,14 +679,15 @@ export default function Dashboard() {
                 ))}
               </Grid>
               
-              <Typography variant="body2" color="var(--text-muted)" sx={{ textAlign: 'center' }}>
+              <Typography variant="body2" color="var(--text-secondary)" sx={{ textAlign: 'center' }}>
                 Get started by creating a new meeting or joining an existing one.
                 <br />Your recent meetings will appear in your history for quick access.
               </Typography>
             </Box>
           </Card>
         </Box>
-      </Box>
+        </Box>
+      </Container>
       
       {/* Notifications */}
       <Snackbar 
