@@ -29,15 +29,25 @@ export default function Meet() {
 	const socketRef = useRef();
 	const streamRef = useRef();
 
-	// Get username from session or default
+	// Get user preferences from session or set defaults
 	useEffect(() => {
 		let name = '';
+		let initialMicOn = true;
+		let initialVideoOn = true;
+		
 		try {
 			const info = JSON.parse(sessionStorage.getItem('nexus_meeting_info'));
-			if (info && info.username) name = info.username;
+			if (info) {
+				if (info.username) name = info.username;
+				if (info.micEnabled !== undefined) initialMicOn = info.micEnabled;
+				if (info.videoEnabled !== undefined) initialVideoOn = info.videoEnabled;
+			}
 		} catch {}
+		
 		if (!name) name = 'Guest-' + Math.floor(Math.random() * 1000);
 		setUsername(name);
+		setMicOn(initialMicOn);
+		setVideoOn(initialVideoOn);
 	}, []);
 
 	// Initialize socket and media
@@ -57,11 +67,28 @@ export default function Meet() {
 		// Get media
 		navigator.mediaDevices.getUserMedia({ audio: true, video: true })
 			.then(stream => {
+				// Apply initial mic preference
+				stream.getAudioTracks().forEach(track => track.enabled = micOn);
+				
+				// For video, if initially off, disable tracks but don't stop them
+				stream.getVideoTracks().forEach(track => {
+					track.enabled = videoOn;
+					console.log(`Initial video state: Video track "${track.label}" ${videoOn ? 'enabled' : 'disabled'}`);
+				});
+				
 				streamRef.current = stream;
 				setLoading(false);
 				socketRef.current.emit('join-room', { meetingId, username });
+				
+				// Notify other users of our initial media state
+				socketRef.current.emit('media-status-changed', { 
+					meetingId, 
+					hasAudio: micOn, 
+					hasVideo: videoOn 
+				});
 			})
-			.catch(() => {
+			.catch((err) => {
+				console.error('Media access error:', err);
 				setLoading(false);
 				alert('Could not access camera/microphone');
 			});
@@ -72,9 +99,9 @@ export default function Meet() {
 		});
 
 		// WebRTC signaling
-		socketRef.current.on('offer', async ({ offer, offererId }) => {
+		socketRef.current.on('offer', async ({ offer, offererId, offererUsername }) => {
 			const peer = createPeer(offererId, false);
-			peersRef.current.push({ id: offererId, peer });
+			peersRef.current.push({ id: offererId, peer, username: offererUsername, hasVideo: true, hasAudio: true });
 			setPeers([...peersRef.current]);
 			await peer.setRemoteDescription(new RTCSessionDescription(offer));
 			const answer = await peer.createAnswer();
@@ -89,10 +116,10 @@ export default function Meet() {
 			const peer = peersRef.current.find(p => p.id === senderId)?.peer;
 			if (peer && candidate) peer.addIceCandidate(new RTCIceCandidate(candidate));
 		});
-		socketRef.current.on('user-joined', ({ id }) => {
+		socketRef.current.on('user-joined', ({ id, username }) => {
 			if (id === socketRef.current.id) return;
 			const peer = createPeer(id, true);
-			peersRef.current.push({ id, peer });
+			peersRef.current.push({ id, peer, username, hasVideo: true, hasAudio: true });
 			setPeers([...peersRef.current]);
 		});
 		socketRef.current.on('user-left', ({ id }) => {
@@ -101,8 +128,14 @@ export default function Meet() {
 		});
 		// Listen for media status changes
 		socketRef.current.on('user-media-status-changed', ({ userId, hasAudio, hasVideo }) => {
-			// Update UI for peer media status (optional: show mic/cam status)
-			// Could add state for peer media status if needed
+			// Update the peer's media status in our state
+			const peerIndex = peersRef.current.findIndex(p => p.id === userId);
+			if (peerIndex !== -1) {
+				peersRef.current[peerIndex].hasAudio = hasAudio;
+				peersRef.current[peerIndex].hasVideo = hasVideo;
+				setPeers([...peersRef.current]);
+				console.log(`Peer ${userId} media status updated: audio=${hasAudio}, video=${hasVideo}`);
+			}
 		});
 
 		return () => {
@@ -119,19 +152,31 @@ export default function Meet() {
 			localVideoRef.current.muted = true;
 			localVideoRef.current.autoplay = true;
 			localVideoRef.current.playsInline = true;
-			localVideoRef.current.style.display = 'block';
+			
+			// Set display style based on video state
+			localVideoRef.current.style.display = videoOn ? 'block' : 'none';
+			
 			localVideoRef.current.onloadedmetadata = () => {
 				localVideoRef.current.play().catch((err) => {
 					console.error('Video play error:', err);
 				});
 			};
 		}
-	}, [streamRef.current, localVideoRef.current]);
+	}, [streamRef.current, localVideoRef.current, videoOn]);
 
 	// Create WebRTC peer
 	function createPeer(targetId, initiator) {
 		const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-		streamRef.current.getTracks().forEach(track => peer.addTrack(track, streamRef.current));
+		
+		// Make sure to add all tracks to the peer connection
+		// The tracks might be disabled, but they need to be added to the connection
+		if (streamRef.current) {
+			streamRef.current.getTracks().forEach(track => {
+				peer.addTrack(track, streamRef.current);
+				console.log(`Added ${track.kind} track to peer connection: ${track.enabled ? 'enabled' : 'disabled'}`);
+			});
+		}
+		
 		peer.onicecandidate = e => {
 			if (e.candidate) {
 				socketRef.current.emit('ice-candidate', { targetId, candidate: e.candidate });
@@ -148,7 +193,7 @@ export default function Meet() {
 			peer.onnegotiationneeded = async () => {
 				const offer = await peer.createOffer();
 				await peer.setLocalDescription(offer);
-				socketRef.current.emit('offer', { targetId, offer });
+				socketRef.current.emit('offer', { targetId, offer, username });
 			};
 		}
 		return peer;
@@ -162,23 +207,131 @@ export default function Meet() {
 		}
 	}
 
-	// Toggle mic/video (fix: update tracks and notify peers)
+	// Toggle mic/video with improved track handling
 	function toggleMic() {
+		if (!streamRef.current) return;
+		
 		const enabled = !micOn;
-		streamRef.current.getAudioTracks().forEach(track => track.enabled = enabled);
+		const audioTracks = streamRef.current.getAudioTracks();
+		
+		// For microphone, we use enabled property rather than stopping the track
+		// This gives better user experience as restarting mic doesn't usually show a UI indicator
+		audioTracks.forEach(track => {
+			track.enabled = enabled;
+			console.log(`Microphone track "${track.label}" set to ${enabled ? 'enabled' : 'disabled'}`);
+		});
+		
+		// Update state and notify peers
 		setMicOn(enabled);
 		socketRef.current.emit('media-status-changed', { meetingId, hasAudio: enabled, hasVideo: videoOn });
+		
+		// Also save to localStorage for persistence
+		localStorage.setItem('nexus_micPreference', enabled.toString());
 	}
+	
 	function toggleVideo() {
+		if (!streamRef.current) return;
+		
 		const enabled = !videoOn;
-		streamRef.current.getVideoTracks().forEach(track => track.enabled = enabled);
-		setVideoOn(enabled);
-		socketRef.current.emit('media-status-changed', { meetingId, hasAudio: micOn, hasVideo: enabled });
+		const videoTracks = streamRef.current.getVideoTracks();
+		
+		if (enabled) {
+			// If turning video on, we need to restart the camera
+			if (videoTracks.length === 0 || videoTracks[0].readyState === 'ended') {
+				// Camera was fully stopped, need to get a new stream
+				navigator.mediaDevices.getUserMedia({ video: true })
+					.then(videoStream => {
+						// Add new video tracks to the stream
+						videoStream.getVideoTracks().forEach(track => {
+							streamRef.current.addTrack(track);
+							console.log(`New video track "${track.label}" added and enabled`);
+							
+							// Add this track to all peer connections
+							peersRef.current.forEach(({ peer }) => {
+								if (peer) {
+									peer.addTrack(track, streamRef.current);
+								}
+							});
+						});
+						
+						// Make sure local video shows the new track
+						if (localVideoRef.current) {
+							localVideoRef.current.srcObject = streamRef.current;
+						}
+						
+						// Update UI and notify peers
+						setVideoOn(true);
+						socketRef.current.emit('media-status-changed', { meetingId, hasAudio: micOn, hasVideo: true });
+					})
+					.catch(err => {
+						console.error("Error restarting camera:", err);
+						// Revert UI state if camera can't be restarted
+						setVideoOn(false);
+					});
+			} else {
+				// Camera is just disabled, enable it
+				videoTracks.forEach(track => {
+					track.enabled = true;
+					console.log(`Video track "${track.label}" enabled`);
+				});
+				
+				// Update state and notify peers
+				setVideoOn(true);
+				socketRef.current.emit('media-status-changed', { meetingId, hasAudio: micOn, hasVideo: true });
+			}
+		} else {
+			// If turning video off, disable but don't stop tracks
+			// This way the camera indicator will remain on but video won't be sent
+			videoTracks.forEach(track => {
+				track.enabled = false;
+				console.log(`Video track "${track.label}" disabled`);
+			});
+			
+			// Update state and notify peers
+			setVideoOn(false);
+			socketRef.current.emit('media-status-changed', { meetingId, hasAudio: micOn, hasVideo: false });
+		}
+		
+		// Also save to localStorage for persistence
+		localStorage.setItem('nexus_videoPreference', enabled.toString());
 	}
 
-	// Leave meeting
+	// Leave meeting with proper cleanup
 	function leaveMeeting() {
-		socketRef.current.emit('leave-room', meetingId);
+		console.log("Leaving meeting, cleaning up resources...");
+		
+		// Notify peers we're leaving
+		if (socketRef.current) {
+			socketRef.current.emit('leave-room', meetingId);
+			// Disconnect from socket to ensure clean termination
+			socketRef.current.disconnect();
+			console.log("Socket disconnected");
+		}
+		
+		// Properly stop all tracks to release camera/mic
+		if (streamRef.current) {
+			const tracks = streamRef.current.getTracks();
+			tracks.forEach(track => {
+				track.stop();
+				streamRef.current.removeTrack(track);
+				console.log(`Track ${track.kind}: ${track.label} has been stopped and removed`);
+			});
+			streamRef.current = null;
+		}
+		
+		// Close all peer connections
+		peersRef.current.forEach(({ peer }) => {
+			if (peer) {
+				peer.close();
+				console.log("Peer connection closed");
+			}
+		});
+		
+		// Clear arrays
+		peersRef.current = [];
+		setPeers([]);
+		
+		// Navigate back to dashboard
 		navigate('/dashboard');
 	}
 
@@ -294,21 +447,34 @@ export default function Meet() {
 					position: 'relative',
 					overflow: 'hidden',
 					width: { xs: '100%', sm: 300, md: 320, lg: 360 },
-					maxWidth: '100%'
+					maxWidth: '100%',
+					display: 'flex',
+					flexDirection: 'column'
 				}}>
-					<video 
-						ref={localVideoRef} 
-						autoPlay 
-						playsInline 
-						muted 
-						style={{ 
-							width: '100%', 
-							borderRadius: 8, 
-							background: '#000',
-							aspectRatio: '16/9',
-							objectFit: 'cover'
-						}} 
-					/>
+					<div style={{
+						width: '100%',
+						height: 0,
+						paddingBottom: '56.25%', // 16:9 aspect ratio
+						position: 'relative'
+					}}>
+						<video 
+							ref={localVideoRef} 
+							autoPlay 
+							playsInline 
+							muted 
+							style={{ 
+								position: 'absolute',
+								top: 0,
+								left: 0,
+								width: '100%',
+								height: '100%',
+								borderRadius: 8, 
+								background: '#000',
+								objectFit: 'cover',
+								display: videoOn ? 'block' : 'none' // Hide video element when video is off
+							}} 
+						/>
+					</div>
 					{!streamRef.current && (
 						<Typography variant="body2" sx={{ color: 'var(--color-error)', textAlign: 'center', mt: 2, fontWeight: 500 }}>
 							Camera stream not available
@@ -327,6 +493,7 @@ export default function Meet() {
 							You {!videoOn && '(video off)'}
 						</Typography>
 					</Box>
+					{/* Enhanced avatar display when video is off */}
 					{!videoOn && (
 						<Box sx={{
 							position: 'absolute',
@@ -335,25 +502,59 @@ export default function Meet() {
 							right: 0,
 							bottom: 0,
 							display: 'flex',
+							flexDirection: 'column',
 							alignItems: 'center',
 							justifyContent: 'center',
-							backgroundColor: 'rgba(0,0,0,0.7)',
+							backgroundColor: '#121212', // Dark background for better contrast
+							borderRadius: 8,
+							height: '100%',
+							padding: 2,
+							boxSizing: 'border-box',
+							overflow: 'hidden'
 						}}>
 							<Avatar 
 								sx={{ 
-									width: 80, 
-									height: 80, 
+									width: { xs: 60, sm: 80, md: 100 }, 
+									height: { xs: 60, sm: 80, md: 100 },
 									bgcolor: 'var(--color-primary)',
-									fontSize: '2rem',
-									fontWeight: 'bold'
+									fontSize: { xs: '1.5rem', sm: '2rem', md: '2.5rem' },
+									fontWeight: 'bold',
+									border: '3px solid rgba(255,255,255,0.2)',
+									boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+									marginBottom: { xs: 1, sm: 2 }
 								}}
 							>
 								{username.charAt(0).toUpperCase()}
 							</Avatar>
+							<Typography 
+								variant="h6"
+								noWrap
+								sx={{ 
+									color: 'white', 
+									fontWeight: 'bold',
+									textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+									fontSize: { xs: '0.9rem', sm: '1.1rem', md: '1.25rem' },
+									maxWidth: '100%',
+									textOverflow: 'ellipsis',
+									textAlign: 'center'
+								}}
+							>
+								{username}
+							</Typography>
+							<Typography 
+								variant="body2" 
+								sx={{ 
+									color: 'rgba(255,255,255,0.7)',
+									mt: 0.5,
+									fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' }
+								}}
+							>
+								Camera off
+							</Typography>
 						</Box>
 					)}
 				</Paper>
-				{peers.map(({ id }) => (
+				{peers.map(({ id, username: peerUsername, hasVideo }) => (
 					<Paper key={id} elevation={2} sx={{ 
 						p: { xs: 1, sm: 2 }, 
 						bgcolor: '#fff', 
@@ -362,20 +563,33 @@ export default function Meet() {
 						position: 'relative',
 						overflow: 'hidden',
 						width: { xs: '100%', sm: 300, md: 320, lg: 360 },
-						maxWidth: '100%'
+						maxWidth: '100%',
+						display: 'flex',
+						flexDirection: 'column'
 					}}>
-						<video 
-							id={'video-' + id} 
-							autoPlay 
-							playsInline 
-							style={{ 
-								width: '100%', 
-								borderRadius: 8, 
-								background: '#000',
-								aspectRatio: '16/9',
-								objectFit: 'cover'
-							}} 
-						/>
+						<div style={{
+							width: '100%',
+							height: 0,
+							paddingBottom: '56.25%', // 16:9 aspect ratio
+							position: 'relative'
+						}}>
+							<video 
+								id={'video-' + id} 
+								autoPlay 
+								playsInline 
+								style={{ 
+									position: 'absolute',
+									top: 0,
+									left: 0,
+									width: '100%',
+									height: '100%',
+									borderRadius: 8, 
+									background: '#000',
+									objectFit: 'cover',
+									display: hasVideo === false ? 'none' : 'block'
+								}} 
+							/>
+						</div>
 						<Box sx={{
 							position: 'absolute',
 							bottom: 8,
@@ -386,9 +600,70 @@ export default function Meet() {
 							py: 0.5
 						}}>
 							<Typography variant="caption" sx={{ color: '#fff', fontWeight: 500 }}>
-								Participant
+								{peerUsername || 'Participant'}
 							</Typography>
 						</Box>
+						
+						{/* Avatar for peers with video off */}
+						{hasVideo === false && (
+							<Box sx={{
+								position: 'absolute',
+								top: 0,
+								left: 0,
+								right: 0,
+								bottom: 0,
+								display: 'flex',
+								flexDirection: 'column',
+								alignItems: 'center',
+								justifyContent: 'center',
+								backgroundColor: '#121212',
+								borderRadius: 8,
+								height: '100%',
+								padding: 2,
+								boxSizing: 'border-box',
+								overflow: 'hidden'
+							}}>
+								<Avatar 
+									sx={{ 
+										width: { xs: 60, sm: 80, md: 100 }, 
+										height: { xs: 60, sm: 80, md: 100 },
+										bgcolor: 'var(--color-secondary)',
+										fontSize: { xs: '1.5rem', sm: '2rem', md: '2.5rem' },
+										fontWeight: 'bold',
+										border: '3px solid rgba(255,255,255,0.2)',
+										boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+										marginBottom: { xs: 1, sm: 2 }
+									}}
+								>
+									{(peerUsername && peerUsername.charAt(0).toUpperCase()) || 'U'}
+								</Avatar>
+								<Typography 
+									variant="h6" 
+									noWrap
+									sx={{ 
+										color: 'white', 
+										fontWeight: 'bold',
+										textShadow: '0 2px 4px rgba(0,0,0,0.5)',
+										fontSize: { xs: '0.9rem', sm: '1.1rem', md: '1.25rem' },
+										maxWidth: '100%',
+										textOverflow: 'ellipsis',
+										textAlign: 'center'
+									}}
+								>
+									{peerUsername || 'Participant'}
+								</Typography>
+								<Typography 
+									variant="body2" 
+									sx={{ 
+										color: 'rgba(255,255,255,0.7)',
+										mt: 0.5,
+										fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' }
+									}}
+								>
+									Camera off
+								</Typography>
+							</Box>
+						)}
 					</Paper>
 				))}
 			</Box>

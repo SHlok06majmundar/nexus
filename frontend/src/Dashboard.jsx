@@ -114,7 +114,13 @@ export default function Dashboard() {
         usedFallback = true;
       }
     }
-    sessionStorage.setItem('nexus_meeting_info', JSON.stringify({ meetingId: id, username: displayName }));
+    // Store meeting info including mic and video preferences
+    sessionStorage.setItem('nexus_meeting_info', JSON.stringify({ 
+      meetingId: id, 
+      username: displayName,
+      micEnabled: micOn,
+      videoEnabled: videoOn
+    }));
     navigate(`/meet/${id}`);
     if (usedFallback) {
       setSnackbar({ open: true, message: 'Warning: Server unavailable, using local meeting ID.', severity: 'warning' });
