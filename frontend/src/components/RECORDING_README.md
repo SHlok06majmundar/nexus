@@ -39,7 +39,8 @@ The RecordingButton component is added to the meeting controls and works as foll
 ## Technical Notes
 
 - Uses the browser's `MediaRecorder` API
-- Combines screen capture with audio from the meeting
+- Combines screen capture with audio from both local and remote participants using Web Audio API
+- Uses AudioContext to mix multiple audio sources into a single high-quality audio track
 - Records in WebM format with VP9 video codec and Opus audio codec
 - Recording quality is set for optimal balance of quality and file size
 - File is processed and downloaded locally (no server storage)

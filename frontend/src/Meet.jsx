@@ -2189,6 +2189,7 @@ export default function Meet() {
 				{/* Recording Button */}
 				<RecordingButton 
 					localStream={streamRef.current} 
+					peerRefs={peersRef}
 					onError={(message) => showError(message, 'error')}
 				/>
 			</Box>

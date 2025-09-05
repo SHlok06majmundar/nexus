@@ -22,9 +22,10 @@ import RecordingService from '../services/RecordingService';
  * 
  * @param {Object} props - Component props
  * @param {MediaStream} props.localStream - The local media stream to capture audio from
+ * @param {Object} props.peerRefs - Reference to peer connections for capturing remote audio
  * @param {Function} props.onError - Error handler function
  */
-function RecordingButton({ localStream, onError }) {
+function RecordingButton({ localStream, peerRefs, onError }) {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedTime, setElapsedTime] = useState('00:00');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -62,10 +63,11 @@ function RecordingButton({ localStream, onError }) {
         setIsRecording(false);
         setElapsedTime('00:00');
       } else {
-        // Start recording
+        // Start recording with peer references for remote audio
         const started = await recordingServiceRef.current.startRecording(
           localStream,
-          (time) => setElapsedTime(time)
+          (time) => setElapsedTime(time),
+          peerRefs // Pass peer references to capture remote audio
         );
         
         if (started) {
