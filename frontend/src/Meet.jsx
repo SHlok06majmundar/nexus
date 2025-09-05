@@ -12,6 +12,7 @@ import CallEndIcon from '@mui/icons-material/CallEnd';
 import ChatIcon from '@mui/icons-material/Chat';
 import RecordingButton from './components/RecordingButton';
 import TranscriptionButton from './components/TranscriptionButton';
+import ScreenShareButton from './components/ScreenShareButton';
 
 const SIGNAL_SERVER = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -71,6 +72,7 @@ export default function Meet() {
 	// Media state
 	const [micOn, setMicOn] = useState(true);
 	const [videoOn, setVideoOn] = useState(true);
+	const [isScreenSharing, setIsScreenSharing] = useState(false);
 	
 	// UI state
 	const [loading, setLoading] = useState(true);
@@ -772,6 +774,27 @@ export default function Meet() {
 				console.log(`Peer ${userId} media status updated: audio=${hasAudio}, video=${hasVideo}`);
 			} else {
 				console.warn(`Received media status update for unknown peer: ${userId}`);
+			}
+		});
+		
+		// Handle remote user screen sharing events
+		socketRef.current.on('user-screen-share', ({ userId, username, isSharing }) => {
+			console.log(`User ${username} (${userId}) screen sharing status: ${isSharing}`);
+			
+			// Update our peer state with screen sharing status
+			const peerIndex = peersRef.current.findIndex(p => p.id === userId);
+			if (peerIndex !== -1) {
+				peersRef.current[peerIndex].isScreenSharing = isSharing;
+				setPeers([...peersRef.current]);
+				
+				// Show notification about screen sharing status change
+				if (isSharing) {
+					showError(`${username} is sharing their screen`, 'info');
+				} else {
+					showError(`${username} stopped sharing their screen`, 'info');
+				}
+			} else {
+				console.warn(`Received screen share update for unknown peer: ${userId}`);
 			}
 		});
 
@@ -1736,6 +1759,34 @@ export default function Meet() {
 		localStorage.setItem('nexus_videoPreference', enabled.toString());
 	}
 
+	// Notify peers about screen sharing status changes
+	const notifyScreenSharingChange = (isSharing) => {
+		if (socketRef.current) {
+			socketRef.current.emit('user-screen-share', {
+				roomId: meetingId,
+				userId: socketRef.current.id,
+				username: username,
+				isSharing: isSharing
+			});
+		}
+	};
+	
+	// Handle screen sharing started
+	const handleScreenShare = (screenStream) => {
+		console.log('Screen sharing started with stream:', screenStream);
+		
+		// Notify all participants that we're sharing screen
+		notifyScreenSharingChange(true);
+	};
+	
+	// Handle screen sharing stopped
+	const handleStopScreenShare = () => {
+		console.log('Screen sharing stopped');
+		
+		// Notify all participants that we stopped sharing screen
+		notifyScreenSharingChange(false);
+	};
+	
 	// Leave meeting with proper cleanup
 	function leaveMeeting() {
 		console.log("Leaving meeting, cleaning up resources...");
@@ -2225,6 +2276,18 @@ export default function Meet() {
 				>
 					{videoOn ? <VideocamIcon /> : <VideocamOffIcon />}
 				</IconButton>
+				
+				{/* Screen Share Button */}
+				<ScreenShareButton
+					onScreenShare={handleScreenShare}
+					onStopScreenShare={handleStopScreenShare}
+					socketRef={socketRef}
+					peerRefs={peersRef}
+					onError={(message) => showError(message, 'error')}
+					isScreenSharing={isScreenSharing}
+					setIsScreenSharing={setIsScreenSharing}
+				/>
+				
 				<IconButton 
 					onClick={leaveMeeting} 
 					sx={{ 
