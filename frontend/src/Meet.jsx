@@ -10,6 +10,7 @@ import VideocamIcon from '@mui/icons-material/Videocam';
 import VideocamOffIcon from '@mui/icons-material/VideocamOff';
 import CallEndIcon from '@mui/icons-material/CallEnd';
 import ChatIcon from '@mui/icons-material/Chat';
+import RecordingButton from './components/RecordingButton';
 
 const SIGNAL_SERVER = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -2184,6 +2185,12 @@ export default function Meet() {
 				>
 					<ChatIcon />
 				</IconButton>
+				
+				{/* Recording Button */}
+				<RecordingButton 
+					localStream={streamRef.current} 
+					onError={(message) => showError(message, 'error')}
+				/>
 			</Box>
 			{/* Chat Sidebar */}
 			{chatOpen && (
