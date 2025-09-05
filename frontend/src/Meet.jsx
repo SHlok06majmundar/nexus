@@ -1331,142 +1331,72 @@ export default function Meet() {
 		
 		// Enhanced track handling with detailed logging and reliability improvements
 		peer.ontrack = e => {
-			console.log(`Track received from ${targetId}:`, e.streams[0]);
-			console.log(`Received ${e.streams.length} streams with ${e.tracks.length} tracks`);
-			
+			console.log(`Track received from ${targetId}:`, e.streams?.[0]);
+			console.log(`Received ${e.streams?.length || 0} streams with ${e.track ? 1 : 0} tracks`);
+
+			// Validate streams
+			if (!e.streams || e.streams.length === 0) {
+				console.warn(`No streams received from peer ${targetId}`);
+				return;
+			}
+
 			// Get or find the peer object in our state
 			const peerObj = peersRef.current.find(p => p.id === targetId);
 			if (!peerObj) {
 				console.warn(`Received track for unknown peer: ${targetId}`);
 				return;
 			}
-			
-			// Find an existing media stream for this peer or use the one from this event
+
+			// Use the first stream
 			let mediaStream = e.streams[0];
-			
+
 			// Log track details and attach event handlers
-			e.tracks.forEach(track => {
-				console.log(`Received track kind: ${track.kind}, enabled: ${track.enabled}, id: ${track.id}, readyState: ${track.readyState}`);
-				
-				// Set up comprehensive track event handlers for better monitoring
-				track.onended = () => {
-					console.log(`Track ${track.id} from peer ${targetId} ended`);
-					
-					// Check if this was the last video track and update peer state
-					if (track.kind === 'video') {
-						const hasVideoTracks = mediaStream.getVideoTracks().some(t => t.readyState === 'live');
-						if (!hasVideoTracks && peerObj) {
-							peerObj.hasVideo = false;
-							setPeers([...peersRef.current]);
-						}
-					}
-				};
-				
-				track.onmute = () => {
-					console.log(`Track ${track.id} from peer ${targetId} muted`);
-					// Could update UI to show muted state
-					if (track.kind === 'video' && peerObj) {
-						// Update peer's video state in UI
-						peerObj.hasVideo = false;
-						setPeers([...peersRef.current]);
-					}
-				};
-				
-				track.onunmute = () => {
-					console.log(`Track ${track.id} from peer ${targetId} unmuted`);
-					// Update UI to show unmuted state
-					if (track.kind === 'video' && peerObj) {
-						peerObj.hasVideo = true;
-						setPeers([...peersRef.current]);
-					}
-				};
-			});
-			
-			// Determine if we have video based on enabled video tracks
-			const hasVideoTracks = mediaStream.getVideoTracks().some(t => t.readyState === 'live' && t.enabled);
-			
-			// Update peer's media status in our state
-			if (peerObj) {
-				// Update based on actual track state
-				if (mediaStream.getVideoTracks().length > 0) {
-					peerObj.hasVideo = hasVideoTracks;
+			e.track.onended = () => {
+				console.log(`Track ${e.track.id} from peer ${targetId} ended`);
+				if (e.track.kind === 'audio') {
+					peerObj.hasAudio = false;
+				} else if (e.track.kind === 'video') {
+					peerObj.hasVideo = false;
 				}
-				if (mediaStream.getAudioTracks().length > 0) {
-					peerObj.hasAudio = mediaStream.getAudioTracks().some(t => t.enabled);
-				}
-				
-				// Update peer state
 				setPeers([...peersRef.current]);
-			}
-			
-			// Update video element for this peer with enhanced error handling and retry logic
-			const updateVideoElement = (retryCount = 0) => {
-				const remoteVideo = document.getElementById('video-' + targetId);
-				if (remoteVideo && mediaStream) {
-					try {
-						// If the video element already has this stream, don't set it again
-						if (remoteVideo.srcObject && remoteVideo.srcObject.id === mediaStream.id) {
-							console.log(`Remote video for ${targetId} already has the same stream`);
-							return;
-						}
-						
-						// Set the new stream
-						remoteVideo.srcObject = mediaStream;
-						console.log(`Set remote video source for peer ${targetId}`);
-						
-						// Try to play with enhanced error handling and auto-retry
-						remoteVideo.play()
-							.then(() => {
-								console.log(`Remote video for ${targetId} playing`);
-								
-								// Set display style based on video track state
-								if (peerObj) {
-									remoteVideo.style.display = peerObj.hasVideo ? 'block' : 'none';
-								}
-							})
-							.catch(err => {
-								console.warn(`Could not autoplay remote video: ${err.message}`);
-								
-								if (err.name === 'NotAllowedError') {
-									console.log('Autoplay not allowed, will try again on user interaction');
-									// Create a one-time click handler to retry playing
-									const clickHandler = () => {
-										remoteVideo.play()
-											.then(() => {
-												console.log('Video playback started after user interaction');
-												document.removeEventListener('click', clickHandler);
-											})
-											.catch(playErr => console.error('Error playing video after user interaction:', playErr));
-									};
-									document.addEventListener('click', clickHandler);
-									
-									// Show a UI indicator that user interaction is needed
-									showError('Please click anywhere to enable audio for this meeting', 'info');
-								} else if (retryCount < 3) {
-									// Auto-retry a few times for other errors
-									console.log(`Retrying video playback (attempt ${retryCount + 1}/3)...`);
-									setTimeout(() => updateVideoElement(retryCount + 1), 1000);
-								}
-							});
-					} catch (err) {
-						console.error(`Error setting up remote video: ${err.message}`);
-						if (retryCount < 3) {
-							setTimeout(() => updateVideoElement(retryCount + 1), 1000);
-						}
-					}
-				} else if (!remoteVideo && retryCount < 5) {
-					// The video element might not be in the DOM yet, retry after a short delay
-					console.log(`Remote video element for ${targetId} not found, retrying... (${retryCount + 1}/5)`);
-					setTimeout(() => updateVideoElement(retryCount + 1), 200);
-				} else if (!remoteVideo) {
-					console.warn(`Remote video element for ${targetId} not found after multiple attempts`);
-				} else if (!mediaStream) {
-					console.warn(`No media stream available for peer ${targetId}`);
-				}
 			};
-			
-			// Start the video element update process
-			updateVideoElement();
+
+			e.track.onmute = () => {
+				console.log(`Track ${e.track.id} from peer ${targetId} muted`);
+				if (e.track.kind === 'audio') {
+					peerObj.hasAudio = false;
+				} else if (e.track.kind === 'video') {
+					peerObj.hasVideo = false;
+				}
+				setPeers([...peersRef.current]);
+			};
+
+			e.track.onunmute = () => {
+				console.log(`Track ${e.track.id} from peer ${targetId} unmuted`);
+				if (e.track.kind === 'audio') {
+					peerObj.hasAudio = true;
+				} else if (e.track.kind === 'video') {
+					peerObj.hasVideo = true;
+				}
+				setPeers([...peersRef.current]);
+			};
+
+			// Update peer's media status
+			if (mediaStream.getAudioTracks().length > 0) {
+				peerObj.hasAudio = mediaStream.getAudioTracks().some(t => t.enabled);
+			}
+			if (mediaStream.getVideoTracks().length > 0) {
+				peerObj.hasVideo = mediaStream.getVideoTracks().some(t => t.enabled);
+			}
+			setPeers([...peersRef.current]);
+
+			// Update video element for this peer
+			const remoteVideo = document.getElementById('video-' + targetId);
+			if (remoteVideo) {
+				remoteVideo.srcObject = mediaStream;
+				remoteVideo.style.display = peerObj.hasVideo ? 'block' : 'none';
+				remoteVideo.play().catch(err => console.error(`Error playing video for peer ${targetId}:`, err));
+			}
 		};
 		
 		// Enhanced negotiation with better error handling and retry
@@ -1871,7 +1801,7 @@ export default function Meet() {
 							<Button 
 								variant="contained" 
 								color="error" 
-								size="small" 
+							size="small" 
 								sx={{ ml: 1, textTransform: 'none' }}
 								onClick={() => setError('')}
 							>
@@ -2044,6 +1974,7 @@ export default function Meet() {
 						}}>
 							<Avatar 
 								sx={{ 
+								 
 									width: { xs: 60, sm: 80, md: 100 }, 
 									height: { xs: 60, sm: 80, md: 100 },
 									bgcolor: 'var(--color-primary)',
