@@ -11,6 +11,7 @@ import VideocamOffIcon from '@mui/icons-material/VideocamOff';
 import CallEndIcon from '@mui/icons-material/CallEnd';
 import ChatIcon from '@mui/icons-material/Chat';
 import RecordingButton from './components/RecordingButton';
+import TranscriptionButton from './components/TranscriptionButton';
 
 const SIGNAL_SERVER = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -2190,6 +2191,13 @@ export default function Meet() {
 				<RecordingButton 
 					localStream={streamRef.current} 
 					peerRefs={peersRef}
+					onError={(message) => showError(message, 'error')}
+				/>
+				
+				{/* Transcription Button */}
+				<TranscriptionButton 
+					localUserId={socketRef.current?.id || ''}
+					localUserName={username}
 					onError={(message) => showError(message, 'error')}
 				/>
 			</Box>
