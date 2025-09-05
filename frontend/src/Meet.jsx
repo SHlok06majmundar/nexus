@@ -777,19 +777,84 @@ export default function Meet() {
 			}
 		});
 		
-		// Handle remote user screen sharing events
+		// Handle remote user screen sharing events with optimized UI response
 		socketRef.current.on('user-screen-share', ({ userId, username, isSharing }) => {
 			console.log(`User ${username} (${userId}) screen sharing status: ${isSharing}`);
 			
 			// Update our peer state with screen sharing status
 			const peerIndex = peersRef.current.findIndex(p => p.id === userId);
 			if (peerIndex !== -1) {
+				// Update status
 				peersRef.current[peerIndex].isScreenSharing = isSharing;
+				
+				// Try to get the video element for this peer
+				try {
+					const videoElement = document.getElementById(`video-${userId}`);
+					if (videoElement) {
+						// Optimize video display for screen sharing
+						if (isSharing) {
+							// If sharing, optimize for screen content
+							videoElement.style.objectFit = 'contain'; // Better for screen content
+							videoElement.style.backgroundColor = '#000'; // Black background
+							
+							// Add higher priority to this video element
+							videoElement.setAttribute('importance', 'high');
+							
+							// Prioritize quality over smoothness for screen content
+							try {
+								if (videoElement.srcObject) {
+									const videoTrack = videoElement.srcObject.getVideoTracks()[0];
+									if (videoTrack) {
+										// Try to set content hints for better rendering
+										videoTrack.contentHint = 'detail';
+									}
+								}
+							} catch (err) {
+								console.warn('Could not set content hint on remote track', err);
+							}
+						} else {
+							// Reset to normal video chat settings
+							videoElement.style.objectFit = 'cover'; // Better for faces
+							videoElement.removeAttribute('importance');
+							
+							// Reset content hints
+							try {
+								if (videoElement.srcObject) {
+									const videoTrack = videoElement.srcObject.getVideoTracks()[0];
+									if (videoTrack) {
+										videoTrack.contentHint = '';
+									}
+								}
+							} catch (err) {
+								console.warn('Could not reset content hint on remote track', err);
+							}
+						}
+						
+						// Force a refresh of the video element
+						videoElement.load();
+					}
+				} catch (err) {
+					console.error('Error optimizing video for screen sharing:', err);
+				}
+				
+				// Update UI state
 				setPeers([...peersRef.current]);
 				
-				// Show notification about screen sharing status change
+				// Show notification with appropriate UI response
 				if (isSharing) {
 					showError(`${username} is sharing their screen`, 'info');
+					
+					// Scroll the video into view if not visible
+					setTimeout(() => {
+						try {
+							const peerElement = document.getElementById(`peer-${userId}`);
+							if (peerElement && typeof peerElement.scrollIntoView === 'function') {
+								peerElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+							}
+						} catch (e) {
+							console.warn('Could not scroll to shared screen', e);
+						}
+					}, 500);
 				} else {
 					showError(`${username} stopped sharing their screen`, 'info');
 				}
@@ -2130,7 +2195,7 @@ export default function Meet() {
 					)}
 				</Paper>
 				{peers.map(({ id, username: peerUsername, hasVideo }) => (
-					<Paper key={id} elevation={2} sx={{ 
+					<Paper key={id} id={`peer-${id}`} elevation={2} sx={{ 
 						p: { xs: 1, sm: 2 }, 
 						bgcolor: '#fff', 
 						borderRadius: 'var(--card-radius)',

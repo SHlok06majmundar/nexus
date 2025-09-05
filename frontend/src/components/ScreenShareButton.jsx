@@ -58,23 +58,28 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
   };
   
   /**
-   * Start screen sharing
+   * Start screen sharing with optimized performance
    */
   const startScreenSharing = async () => {
     try {
-      console.log('Starting screen sharing...');
+      console.log('Starting screen sharing with optimized settings...');
       
-      // Get screen stream
+      // Update UI state immediately for faster perceived response
+      setIsScreenSharing(true);
+      
+      // Get screen stream with optimized settings for better performance
+      // Use more browser-compatible constraints
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
         video: { 
           cursor: 'always',
           displaySurface: 'monitor',
-          logicalSurface: true,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { max: 30 }
+          // Avoid using min constraints which may not be supported in all browsers
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          // Use only ideal for frameRate to be more compatible
+          frameRate: { ideal: 24 }
         },
-        audio: true // Include audio from the screen if available (like system audio)
+        audio: true // Simplified audio constraint for better compatibility
       });
       
       // Store reference to the screen stream
@@ -86,20 +91,66 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
         stopScreenSharing();
       };
       
-      // Update state
-      setIsScreenSharing(true);
+      // Apply encoding optimizations for video track to reduce initial latency
+      const videoTrack = screenStream.getVideoTracks()[0];
+      if (videoTrack) {
+        // Apply content hints to optimize encoding
+        videoTrack.contentHint = "detail";
+        
+        // Set priority to high for better quality
+        try {
+          const constraints = { priority: 'high' };
+          videoTrack.applyConstraints(constraints);
+        } catch (e) {
+          console.log('Could not apply constraints to screen track:', e);
+        }
+      }
       
-      // Send screen stream to all peers
+      // Send screen stream to all peers efficiently
       if (peerRefs && peerRefs.current) {
-        peerRefs.current.forEach(({ peer }) => {
+        // Process all peers in parallel for faster distribution
+        const peerUpdatePromises = peerRefs.current.map(async ({ peer, id }) => {
           if (peer && peer.connectionState !== 'closed') {
-            // Get all screen tracks
-            screenStream.getTracks().forEach(track => {
-              console.log(`Adding screen track ${track.kind} to peer`);
-              peer.addTrack(track, screenStream);
-            });
+            try {
+              const videoSender = peer.getSenders().find(s => 
+                s.track && s.track.kind === 'video' && s.track.readyState === 'live'
+              );
+              
+              // Prioritize video track handling for faster sharing
+              if (videoTrack) {
+                if (videoSender) {
+                  // Replace existing track for better performance
+                  console.log(`Replacing video track for peer ${id}`);
+                  await videoSender.replaceTrack(videoTrack);
+                } else {
+                  // Add as new track if no existing track
+                  console.log(`Adding screen video track to peer ${id}`);
+                  peer.addTrack(videoTrack, screenStream);
+                }
+              }
+              
+              // Process audio track after video for better perceived performance
+              const audioTrack = screenStream.getAudioTracks()[0];
+              if (audioTrack) {
+                const audioSender = peer.getSenders().find(s => 
+                  s.track && s.track.kind === 'audio'
+                );
+                
+                if (!audioSender) {
+                  console.log(`Adding screen audio track to peer ${id}`);
+                  peer.addTrack(audioTrack, screenStream);
+                }
+              }
+            } catch (err) {
+              console.error(`Error sending screen to peer ${id}:`, err);
+            }
           }
         });
+        
+        // Wait for all peer updates to complete
+        Promise.all(peerUpdatePromises).catch(err => 
+          console.error('Error updating peers with screen share:', err)
+        );
       }
       
       // Notify about the screen share to help synchronize UI for other users
@@ -128,7 +179,7 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
   };
   
   /**
-   * Stop screen sharing
+   * Stop screen sharing with optimized cleanup
    */
   const stopScreenSharing = () => {
     // Don't do anything if not sharing
@@ -136,35 +187,80 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
     
     console.log('Stopping screen sharing...');
     
+    // Update UI state immediately for responsive feedback
+    setIsScreenSharing(false);
+    
     try {
-      // Stop all tracks in the screen stream
-      screenStreamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
+      // Get track references before stopping them
+      const screenTrackIds = screenStreamRef.current.getTracks().map(track => track.id);
+      const videoTrack = screenStreamRef.current.getVideoTracks()[0];
       
-      // Remove screen share tracks from all peers
+      // Process peer connections first for faster UI response on remote ends
       if (peerRefs && peerRefs.current) {
-        peerRefs.current.forEach(({ peer }) => {
+        // Process connections in parallel
+        peerRefs.current.forEach(({ peer, id }) => {
           if (peer && peer.connectionState !== 'closed') {
-            const senders = peer.getSenders();
-            const screenTrackIds = screenStreamRef.current.getTracks().map(track => track.id);
-            
-            senders.forEach(sender => {
-              if (sender.track && screenTrackIds.includes(sender.track.id)) {
-                console.log(`Removing screen track ${sender.track.kind} from peer`);
-                peer.removeTrack(sender);
+            try {
+              const senders = peer.getSenders();
+              
+              // Find and clean up video senders first (most important for UI feedback)
+              const videoSender = senders.find(sender => 
+                sender.track && 
+                sender.track.kind === 'video' && 
+                screenTrackIds.includes(sender.track.id)
+              );
+              
+              if (videoSender) {
+                // Instead of removing the track (which can be slow),
+                // replace it with a null track or stop it
+                if (videoTrack) {
+                  videoTrack.enabled = false;
+                  console.log(`Disabled screen video track for peer ${id}`);
+                  peer.removeTrack(videoSender);
+                }
               }
-            });
+              
+              // Then process other tracks
+              senders.forEach(sender => {
+                if (sender !== videoSender && 
+                    sender.track && 
+                    screenTrackIds.includes(sender.track.id)) {
+                  console.log(`Removing screen track ${sender.track.kind} from peer ${id}`);
+                  peer.removeTrack(sender);
+                }
+              });
+            } catch (err) {
+              console.error(`Error cleaning up screen share for peer ${id}:`, err);
+            }
           }
         });
       }
       
-      // Notify peers about stopping screen share
+      // Stop all tracks in the screen stream AFTER peer handling
+      screenStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log(`Stopped screen track: ${track.kind}`);
+      });
+      
+      // Clear the reference to free memory
+      screenStreamRef.current = null;
+      
+      // Emit screen share stopped event to all participants for faster UI updates
       if (socketRef && socketRef.current) {
         socketRef.current.emit('screen-share-stopped', {
           roomId: socketRef.current.roomId,
           userId: socketRef.current.id
         });
+        console.log('Notified peers of screen share stopped');
+      }
+      
+      // Schedule a garbage collection hint (not guaranteed, but can help)
+      if (window.gc) {
+        try {
+          window.gc();
+        } catch (e) {
+          console.log('Manual GC not available');
+        }
       }
       
       // Call the callback
@@ -191,12 +287,49 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
               color: isScreenSharing ? 'var(--color-success)' : 'var(--color-primary)', 
               borderRadius: 'var(--button-radius)',
               p: { xs: 1, sm: 1.5 },
+              position: 'relative',
               '&:hover': {
                 bgcolor: isScreenSharing ? 'rgba(76, 175, 80, 0.2)' : 'rgba(156, 39, 176, 0.2)'
-              }
+              },
+              // Animated pulsing effect when sharing
+              ...(isScreenSharing && {
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '-4px',
+                  left: '-4px',
+                  right: '-4px',
+                  bottom: '-4px',
+                  border: '2px solid var(--color-success)',
+                  borderRadius: 'var(--button-radius)',
+                  animation: 'pulse 2s infinite',
+                  opacity: 0.6,
+                  zIndex: -1
+                },
+                '@keyframes pulse': {
+                  '0%': { transform: 'scale(1)', opacity: 0.6 },
+                  '50%': { transform: 'scale(1.05)', opacity: 0.8 },
+                  '100%': { transform: 'scale(1)', opacity: 0.6 }
+                }
+              })
             }}
           >
             {isScreenSharing ? <StopScreenShareIcon /> : <ScreenShareIcon />}
+            {/* Live indicator dot */}
+            {isScreenSharing && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 3,
+                  right: 3,
+                  width: 8,
+                  height: 8,
+                  bgcolor: 'var(--color-success)',
+                  borderRadius: '50%',
+                  animation: 'livePulse 1.5s infinite ease-in-out'
+                }}
+              />
+            )}
           </IconButton>
         </span>
       </Tooltip>

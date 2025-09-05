@@ -774,6 +774,62 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Handle screen sharing start event
+  socket.on('screen-share-started', ({ roomId, userId }) => {
+    try {
+      console.log(`User ${socket.id} (${socket.username}) started screen sharing in room ${roomId}`);
+      
+      // Update last activity time
+      socket.lastActivity = Date.now();
+      
+      if (!socket.meetingId || !activeRooms.has(roomId)) return;
+      
+      // Broadcast to all participants in the room
+      socket.to(roomId).emit('user-screen-share', {
+        userId: userId || socket.id,
+        username: socket.username,
+        isSharing: true
+      });
+      
+      // Update user data if needed
+      const user = activeRooms.get(roomId).get(socket.id);
+      if (user) {
+        user.isScreenSharing = true;
+      }
+    } catch (error) {
+      console.error('Error handling screen share start:', error);
+      socket.emit('error', { message: 'Failed to update screen sharing status' });
+    }
+  });
+  
+  // Handle screen sharing stop event
+  socket.on('screen-share-stopped', ({ roomId, userId }) => {
+    try {
+      console.log(`User ${socket.id} (${socket.username}) stopped screen sharing in room ${roomId}`);
+      
+      // Update last activity time
+      socket.lastActivity = Date.now();
+      
+      if (!socket.meetingId || !activeRooms.has(roomId)) return;
+      
+      // Broadcast to all participants in the room
+      socket.to(roomId).emit('user-screen-share', {
+        userId: userId || socket.id,
+        username: socket.username,
+        isSharing: false
+      });
+      
+      // Update user data if needed
+      const user = activeRooms.get(roomId).get(socket.id);
+      if (user) {
+        user.isScreenSharing = false;
+      }
+    } catch (error) {
+      console.error('Error handling screen share stop:', error);
+      socket.emit('error', { message: 'Failed to update screen sharing status' });
+    }
+  });
+  
   // Handle user requesting current room status
   socket.on('get-room-status', (meetingId, callback) => {
     try {
