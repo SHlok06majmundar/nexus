@@ -83,6 +83,7 @@ const io = new Server(server, {
 const activeRooms = new Map(); // Track active meeting rooms
 const peerConnections = new Map(); // Track WebRTC peer connections
 const userActivity = new Map(); // Track user activity for cleanup
+const roomMessages = new Map(); // Store recent chat messages for each room
 
 app.get('/', (req, res) => {
   res.send('Hello from backend!');
@@ -141,7 +142,7 @@ io.on('connection', (socket) => {
     try {
       console.log(`User ${username} (${socket.id}) joining room: ${meetingId}`);
       
-      // Validate inputs
+      // Validate inputs with enhanced error handling
       if (!meetingId || typeof meetingId !== 'string') {
         socket.emit('error', { message: 'Invalid meeting ID' });
         return;
@@ -149,6 +150,13 @@ io.on('connection', (socket) => {
       
       if (!username || typeof username !== 'string') {
         username = `Guest-${Math.floor(Math.random() * 1000)}`;
+        console.log(`Using generated username: ${username} for user ${socket.id}`);
+      }
+      
+      // Check if already in a room, leave it first
+      if (socket.meetingId && socket.meetingId !== meetingId) {
+        console.log(`User ${socket.id} already in room ${socket.meetingId}, leaving it before joining ${meetingId}`);
+        handleUserLeaving(socket, socket.meetingId);
       }
       
       // Join the socket room
@@ -156,38 +164,63 @@ io.on('connection', (socket) => {
       socket.username = username;
       socket.meetingId = meetingId;
       
-      // Track this user in the room
+      // Track this user in the room with more metadata
       if (!activeRooms.has(meetingId)) {
         console.log(`Creating new meeting room: ${meetingId}`);
         activeRooms.set(meetingId, new Map());
       }
       
+      // Store more information about the user
       activeRooms.get(meetingId).set(socket.id, {
         id: socket.id,
         username,
         hasAudio: true,
         hasVideo: true,
-        joinedAt: Date.now()
+        joinedAt: Date.now(),
+        clientAddress: socket.handshake.headers['x-forwarded-for'] || 
+                       socket.handshake.address.replace(/^.*:/, ''),
+        userAgent: socket.handshake.headers['user-agent'] || 'Unknown',
+        connectionCount: 0, // Track reconnections
+        lastActivity: Date.now()
       });
       
-      // Log room stats
-      console.log(`Room ${meetingId} now has ${activeRooms.get(meetingId).size} participants`);
+      // Log room stats with enhanced details
+      const roomUsers = activeRooms.get(meetingId);
+      console.log(`Room ${meetingId} now has ${roomUsers.size} participants`);
       
-      // Notify others in the room
+      // Log participant details for debugging
+      console.log(`Room ${meetingId} participants:`);
+      roomUsers.forEach((user, userId) => {
+        console.log(`- ${user.username} (${userId}), joined: ${new Date(user.joinedAt).toISOString()}`);
+      });
+      
+      // Notify others in the room with timestamp
       socket.to(meetingId).emit('room-message', { 
         type: 'system', 
-        text: `${username} joined the meeting.` 
+        text: `${username} joined the meeting.`,
+        timestamp: new Date().toISOString(),
+        userId: 'system'
       });
       
       // Send the list of participants to the new joiner
-      const participants = Array.from(activeRooms.get(meetingId).values()).map(user => ({
+      const participants = Array.from(roomUsers.values()).map(user => ({
         id: user.id,
         username: user.username,
         hasAudio: user.hasAudio,
-        hasVideo: user.hasVideo
+        hasVideo: user.hasVideo,
+        joinedAt: user.joinedAt
       }));
       
       socket.emit('room-users', participants);
+      
+      // Send recent chat history to the new joiner
+      if (roomMessages.has(meetingId)) {
+        const recentMessages = roomMessages.get(meetingId);
+        if (recentMessages.length > 0) {
+          console.log(`Sending ${recentMessages.length} recent messages to new participant ${socket.id}`);
+          socket.emit('room-message-history', recentMessages);
+        }
+      }
       
       // Broadcast to everyone that user list has changed
       io.to(meetingId).emit('room-users-changed', participants);
@@ -197,25 +230,44 @@ io.on('connection', (socket) => {
         id: socket.id, 
         username,
         hasAudio: true,
-        hasVideo: true
+        hasVideo: true,
+        timestamp: Date.now()
       });
       
-      // Acknowledge successful join
+      // Send message history to the new user
+      if (roomMessages.has(meetingId)) {
+        // Send last 50 messages max
+        const messageHistory = roomMessages.get(meetingId).slice(-50);
+        if (messageHistory.length > 0) {
+          socket.emit('room-message-history', {
+            messages: messageHistory,
+            roomId: meetingId
+          });
+          console.log(`Sent ${messageHistory.length} message history items to ${socket.id}`);
+        }
+      }
+      
+      // Acknowledge successful join with more details
       socket.emit('joined-room', { 
         success: true, 
         meetingId, 
-        participantCount: participants.length 
+        participantCount: participants.length,
+        yourId: socket.id,
+        timestamp: Date.now()
       });
+      
+      // Log connection success for monitoring
+      console.log(`User ${username} (${socket.id}) successfully joined room ${meetingId} with ${participants.length} total participants`);
     } catch (error) {
       console.error(`Error joining room ${meetingId}:`, error);
       socket.emit('error', { 
         message: 'Failed to join meeting room', 
-        details: NODE_ENV === 'development' ? error.message : undefined 
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
       });
     }
   });
   
-  // Handle room-specific messages with improved validation
+  // Enhanced room-specific messages with improved validation, reliability and delivery tracking
   socket.on('room-message', ({ meetingId, text, messageId }) => {
     try {
       // Update last activity time
@@ -224,97 +276,320 @@ io.on('connection', (socket) => {
         userActivity.get(socket.id).lastActivity = Date.now();
       }
       
-      // Check if user is in a room
+      // Check if user is in a room with better error messaging
       if (!socket.username || !socket.meetingId) {
-        socket.emit('error', { message: 'You are not in a meeting room' });
+        socket.emit('error', { 
+          message: 'You are not in a meeting room',
+          code: 'NOT_IN_ROOM'
+        });
         return;
       }
       
-      // Validate message
+      // Ensure meetingId matches the current room
+      if (socket.meetingId !== meetingId) {
+        socket.emit('error', { 
+          message: 'Message cannot be sent to a different room',
+          code: 'WRONG_ROOM'
+        });
+        return;
+      }
+      
+      // Validate message content
       if (!text || typeof text !== 'string') {
-        socket.emit('error', { message: 'Invalid message' });
+        socket.emit('error', { 
+          message: 'Invalid message format',
+          code: 'INVALID_MESSAGE'
+        });
         return;
       }
       
-      // Filter message text if needed (optional profanity filter)
-      const filteredText = text; // Replace with actual filtering if needed
+      // Limit message length to prevent abuse
+      const maxLength = 2000;
+      const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+      
+      // Generate a consistent message ID if not provided
+      const actualMessageId = messageId || `${socket.id}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       
       // Create the message object once to ensure consistency
       const messageObj = {
         id: socket.id,
-        messageId: messageId || `${socket.id}-${Date.now()}`,
+        messageId: actualMessageId,
         user: socket.username,
-        text: filteredText,
-        timestamp: new Date().toISOString()
+        text: truncatedText,
+        timestamp: new Date().toISOString(),
+        delivered: true
       };
       
-      console.log(`Message from ${socket.username} in room ${meetingId}: ${text.substring(0, 20)}${text.length > 20 ? '...' : ''}`);
+      console.log(`Message from ${socket.username} in room ${meetingId} [ID: ${actualMessageId}]: ${truncatedText.substring(0, 40)}${truncatedText.length > 40 ? '...' : ''}`);
       
-      // Send to sender (acknowledgement)
-      socket.emit('room-message-confirm', messageObj);
+      // Get count of recipients for delivery tracking
+      const roomMembers = io.sockets.adapter.rooms.get(meetingId);
+      const recipientCount = roomMembers ? roomMembers.size - 1 : 0; // Exclude sender
+      
+      // Track successful deliveries
+      let deliveryCount = 0;
       
       // Send to everyone else in the room
-      socket.to(meetingId).emit('room-message', messageObj);
-    } catch (error) {
-      console.error('Error handling message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
-    }
-  });
+      if (recipientCount > 0) {
+        socket.to(meetingId).emit('room-message', messageObj);
+      }
+      
+      // Log delivery metrics
+      console.log(`Message ${actualMessageId} sent to ${recipientCount} recipients`);
+      
+      // Send acknowledgement to sender with delivery info
+      socket.emit('room-message-confirm', {
+        ...messageObj,
+        recipientCount,
+        deliveryCount
+      });
+      
+      // Add a small delay to ensure delivery acknowledgment gets back to client
+      setTimeout(() => {
+        socket.emit(`room-message-confirm-${actualMessageId}`, {
+          ...messageObj,
+          recipientCount,
+          deliveryCount
+        });
+      }, 100);
+      
+      // Store message in room history (optional)
+      if (!roomMessages.has(meetingId)) {
+        roomMessages.set(meetingId, []);
+      }
+
+
   
-  // WebRTC Signaling with enhanced reliability
-  socket.on('offer', ({ targetId, offer }) => {
+  // Handle typing indicators
+  socket.on('user-typing', ({ meetingId, username }) => {
     try {
       // Update last activity time
       socket.lastActivity = Date.now();
       
-      console.log(`Offer from ${socket.id} to ${targetId}`);
+      // Validate input
+      if (!meetingId || !username) {
+        return;
+      }
+      
+      // Ensure user is in the correct room
+      if (socket.meetingId !== meetingId) {
+        return;
+      }
+      
+      // Broadcast typing status to others in room
+      socket.to(meetingId).emit('user-typing', { username });
+      
+      console.log(`User ${username} is typing in room ${meetingId}`);
+    } catch (error) {
+      console.error(`Error handling typing indicator:`, error);
+    }
+  });
+  
+  // Handle stopped typing events
+  socket.on('user-stopped-typing', ({ meetingId, username }) => {
+    try {
+      // Validate input
+      if (!meetingId || !username) {
+        return;
+      }
+      
+      // Ensure user is in the correct room
+      if (socket.meetingId !== meetingId) {
+        return;
+      }
+      
+      // Broadcast stopped typing status to others in room
+      socket.to(meetingId).emit('user-stopped-typing', { username });
+      
+      console.log(`User ${username} stopped typing in room ${meetingId}`);
+    } catch (error) {
+      console.error(`Error handling stopped typing indicator:`, error);
+    }
+  });
+  
+  // Handle message read receipts
+  socket.on('message-read', ({ messageId, meetingId }) => {
+    try {
+      // Validate input
+      if (!messageId || !meetingId) {
+        return;
+      }
+      
+      // Ensure user is in the correct room
+      if (socket.meetingId !== meetingId) {
+        return;
+      }
+      
+      // Find the original sender socket ID from the message ID format: senderId-timestamp-random
+      const senderIdMatch = messageId.match(/^([^-]+)-/);
+      if (!senderIdMatch) {
+        return;
+      }
+      
+      const senderId = senderIdMatch[1];
+      
+      // Check if the sender is still connected
+      const senderSocket = io.sockets.sockets.get(senderId);
+      if (senderSocket) {
+        // Notify the sender that their message was read
+        senderSocket.emit('message-read-receipt', {
+          messageId,
+          readBy: socket.username || socket.id,
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log(`Message ${messageId} was read by ${socket.username || socket.id}`);
+      }
+    } catch (error) {
+      console.error(`Error handling message read receipt:`, error);
+    }
+  });
+      
+      // Limit history size
+      const history = roomMessages.get(meetingId);
+      if (history.length >= 100) {
+        history.shift(); // Remove oldest message
+      }
+      
+      // Add to history
+      history.push(messageObj);
+      
+    } catch (error) {
+      console.error('Error handling message:', error);
+      socket.emit('error', { 
+        message: 'Failed to send message', 
+        code: 'MESSAGE_ERROR',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  });
+  
+  // WebRTC Signaling with enhanced reliability, monitoring, and error handling
+  socket.on('offer', ({ targetId, offer, offererId, offererUsername }) => {
+    try {
+      // Update last activity time
+      socket.lastActivity = Date.now();
+      
+      const actualOffererId = offererId || socket.id;
+      const actualUsername = offererUsername || socket.username || 'Unknown User';
+      
+      console.log(`Offer from ${actualOffererId} (${actualUsername}) to ${targetId}`);
       
       if (!targetId || !offer) {
         socket.emit('error', { message: 'Invalid offer parameters' });
         return;
       }
       
-      // Check if target is still connected
+      // Check if target is still connected with better error handling
       const targetSocket = io.sockets.sockets.get(targetId);
       if (!targetSocket) {
-        socket.emit('error', { message: 'Target peer is not connected' });
+        console.warn(`Target ${targetId} not connected, notifying sender`);
+        socket.emit('peer-unavailable', { 
+          peerId: targetId,
+          reason: 'Target peer is not connected'
+        });
         return;
       }
       
+      // Verify target is in the same room with clearer logging
+      if (socket.meetingId && targetSocket.meetingId !== socket.meetingId) {
+        console.warn(`Target ${targetId} not in the same room (${targetSocket.meetingId} vs ${socket.meetingId}), notifying sender`);
+        socket.emit('peer-unavailable', { 
+          peerId: targetId,
+          reason: 'Target peer is not in the same room'
+        });
+        return;
+      }
+      
+      // Log SDP offer details for debugging (truncated)
+      if (offer && offer.sdp) {
+        const sdpPreview = offer.sdp.substring(0, 100) + '...';
+        console.log(`SDP offer from ${actualOffererId} to ${targetId} preview: ${sdpPreview}`);
+        
+        // Track if this is an ICE restart
+        const isIceRestart = offer.sdp.includes('ice-options:renomination') || 
+                            offer.sdp.includes('ice-options:trickle');
+        if (isIceRestart) {
+          console.log(`This is an ICE restart offer from ${actualOffererId} to ${targetId}`);
+        }
+      }
+      
+      // Send the offer with enhanced metadata
       socket.to(targetId).emit('offer', {
         offer,
-        offererId: socket.id,
-        offererUsername: socket.username
+        offererId: actualOffererId,
+        offererUsername: actualUsername,
+        timestamp: Date.now()
       });
+      
+      // Send acknowledgement to sender with enhanced information
+      socket.emit('signaling-success', {
+        type: 'offer',
+        targetId,
+        timestamp: Date.now(),
+        targetUsername: targetSocket.username || 'Unknown User'
+      });
+      
     } catch (error) {
       console.error('Error handling offer:', error);
-      socket.emit('error', { message: 'Failed to send offer' });
+      socket.emit('error', { 
+        message: 'Failed to send offer', 
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Server error processing offer'
+      });
     }
   });
   
-  socket.on('answer', ({ targetId, answer }) => {
+  socket.on('answer', ({ targetId, answer, answererId, answererUsername }) => {
     try {
       // Update last activity time
       socket.lastActivity = Date.now();
       
-      console.log(`Answer from ${socket.id} to ${targetId}`);
+      const actualAnswererId = answererId || socket.id;
+      const actualUsername = answererUsername || socket.username || 'Unknown User';
+      
+      console.log(`Answer from ${actualAnswererId} (${actualUsername}) to ${targetId}`);
       
       if (!targetId || !answer) {
         socket.emit('error', { message: 'Invalid answer parameters' });
         return;
       }
       
+      // Check if target is still connected
+      const targetSocket = io.sockets.sockets.get(targetId);
+      if (!targetSocket) {
+        console.warn(`Target ${targetId} not connected for answer, notifying sender`);
+        socket.emit('peer-unavailable', { 
+          peerId: targetId,
+          reason: 'Target peer is not connected'
+        });
+        return;
+      }
+      
+      // Send the answer with enhanced metadata
       socket.to(targetId).emit('answer', {
         answer,
-        answererId: socket.id
+        answererId: actualAnswererId,
+        answererUsername: actualUsername,
+        timestamp: Date.now()
       });
+      
+      // Send acknowledgement to sender
+      socket.emit('signaling-success', {
+        type: 'answer',
+        targetId,
+        timestamp: Date.now()
+      });
+      
     } catch (error) {
       console.error('Error handling answer:', error);
-      socket.emit('error', { message: 'Failed to send answer' });
+      socket.emit('error', { 
+        message: 'Failed to send answer', 
+        details: NODE_ENV === 'development' ? error.message : undefined 
+      });
     }
   });
   
-  socket.on('ice-candidate', ({ targetId, candidate }) => {
+  socket.on('ice-candidate', ({ targetId, candidate, senderId }) => {
     try {
       // Don't update activity time for ICE candidates as they can be frequent
       
@@ -322,13 +597,151 @@ io.on('connection', (socket) => {
         return; // Silently ignore invalid ICE candidates
       }
       
+      const actualSenderId = senderId || socket.id;
+      
+      // Enhanced logging for different candidate types to help with debugging
+      if (candidate.candidate) {
+        const candidateStr = candidate.candidate;
+        
+        // Log different ICE candidate types with different verbosity
+        if (candidateStr.includes('typ relay')) {
+          // TURN relay candidates are the most important for NAT traversal
+          console.log(`TURN relay candidate from ${actualSenderId} to ${targetId}: ${candidateStr}`);
+        }
+        else if (candidateStr.includes('typ srflx')) {
+          // Server reflexive candidates - STUN derived
+          console.log(`STUN candidate from ${actualSenderId} to ${targetId} (${candidateStr.split(' ')[4]} ${candidateStr.split(' ')[5]})`);
+        }
+        else if (candidateStr.includes('typ prflx')) {
+          // Peer reflexive candidates - discovered during ICE
+          console.log(`Peer reflexive candidate from ${actualSenderId} to ${targetId} (${candidateStr.split(' ')[4]} ${candidateStr.split(' ')[5]})`);
+        }
+        else if (candidateStr.includes('typ host')) {
+          // Host candidates - local interfaces
+          // These are very common so we'll use debug level
+          if (process.env.DEBUG_ICE) {
+            console.log(`Host candidate from ${actualSenderId} to ${targetId} (${candidateStr.split(' ')[4]} ${candidateStr.split(' ')[5]})`);
+          }
+        }
+        
+        // Track TCP candidates which can help with restrictive firewalls
+        if (candidateStr.includes('tcptype')) {
+          console.log(`TCP candidate from ${actualSenderId} to ${targetId}: ${candidateStr}`);
+        }
+      }
+      
+      // Check if target is still connected with better handling
+      const targetSocket = io.sockets.sockets.get(targetId);
+      if (!targetSocket) {
+        // If the target is no longer connected, we should notify the sender
+        // but only for the first candidate, not for all to avoid spamming
+        if (!socket.notifiedMissingPeer || !socket.notifiedMissingPeer[targetId]) {
+          // Initialize the tracking object if needed
+          if (!socket.notifiedMissingPeer) socket.notifiedMissingPeer = {};
+          
+          // Mark this peer as notified
+          socket.notifiedMissingPeer[targetId] = true;
+          
+          // Notify sender that peer is gone
+          socket.emit('peer-unavailable', { 
+            peerId: targetId,
+            reason: 'Target peer disconnected during ICE negotiation'
+          });
+          
+          console.log(`Target ${targetId} not available for ICE candidate from ${actualSenderId}, notified sender`);
+        }
+        return;
+      }
+      
+      // Make sure peers are in the same room
+      if (socket.meetingId && targetSocket.meetingId !== socket.meetingId) {
+        if (!socket.notifiedWrongRoom || !socket.notifiedWrongRoom[targetId]) {
+          if (!socket.notifiedWrongRoom) socket.notifiedWrongRoom = {};
+          socket.notifiedWrongRoom[targetId] = true;
+          
+          socket.emit('peer-unavailable', { 
+            peerId: targetId,
+            reason: 'Target peer is in a different meeting room'
+          });
+          
+          console.log(`Target ${targetId} in wrong room for ICE candidate from ${actualSenderId}, notified sender`);
+        }
+        return;
+      }
+      
+      // Send the candidate with enhanced metadata
       socket.to(targetId).emit('ice-candidate', {
         candidate,
-        senderId: socket.id
+        senderId: actualSenderId,
+        timestamp: Date.now()
       });
+      
     } catch (error) {
       console.error('Error handling ICE candidate:', error);
-      // Don't send error response for ICE candidates
+      // Don't send error response for ICE candidates to avoid spamming
+    }
+  });
+  
+  // Add new event handler for connection status tracking
+  socket.on('connection-status', ({ peerId, status, details }) => {
+    try {
+      // This event is for monitoring/debugging WebRTC connection states
+      console.log(`Connection status from ${socket.id} to ${peerId}: ${status}`);
+      
+      if (status === 'failed' || status === 'disconnected') {
+        // Log the connection problem
+        console.warn(`WebRTC connection problem between ${socket.id} and ${peerId}: ${status}`, details);
+        
+        // Notify the peer about the connection status if they're still connected
+        const peerSocket = io.sockets.sockets.get(peerId);
+        if (peerSocket) {
+          peerSocket.emit('peer-connection-status', {
+            peerId: socket.id,
+            status,
+            timestamp: Date.now()
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error handling connection status update:', error);
+    }
+  });
+  
+  // Add new event for manual peer reconnection requests
+  socket.on('reconnect-peer', ({ targetId }) => {
+    try {
+      if (!targetId) {
+        socket.emit('error', { message: 'Invalid reconnection parameters' });
+        return;
+      }
+      
+      console.log(`Reconnection request from ${socket.id} to ${targetId}`);
+      
+      // Check if target is still connected
+      const targetSocket = io.sockets.sockets.get(targetId);
+      if (!targetSocket) {
+        socket.emit('peer-unavailable', { 
+          peerId: targetId,
+          reason: 'Target peer is not connected'
+        });
+        return;
+      }
+      
+      // Notify target to initiate a new connection
+      socket.to(targetId).emit('peer-reconnect-requested', {
+        peerId: socket.id,
+        username: socket.username,
+        timestamp: Date.now()
+      });
+      
+      socket.emit('reconnect-peer-requested', {
+        peerId: targetId,
+        timestamp: Date.now()
+      });
+      
+    } catch (error) {
+      console.error('Error handling reconnect request:', error);
+      socket.emit('error', { message: 'Failed to request reconnection' });
     }
   });
   
