@@ -12,6 +12,9 @@ class TranscriptionService {
     this.currentSpeakerName = null;
     this.onTranscriptCallback = null;
     this.onErrorCallback = null;
+    this.mediaStream = null; // Store reference to the media stream
+    this.remoteAudioSources = {}; // Store remote participant audio streams
+    this.activeSpeaker = null; // Track currently speaking participant
     this.supportedLanguages = [
       // English variants
       { code: 'en-US', name: 'English (US)' },
@@ -90,11 +93,22 @@ class TranscriptionService {
         .map(result => result.transcript)
         .join('');
       
-      // Only process if we have a current speaker
-      if (this.currentSpeakerId && this.currentSpeakerName) {
+      // Determine the current speaker - either detected active speaker or fallback to local user
+      const speakerId = this.activeSpeaker || this.currentSpeakerId;
+      let speakerName = this.currentSpeakerName;
+      
+      // If we have a different active speaker, use their name
+      if (this.activeSpeaker && this.remoteAudioSources[this.activeSpeaker]) {
+        speakerName = this.remoteAudioSources[this.activeSpeaker].name;
+      }
+      
+      // Only process if we have a valid speaker
+      if (speakerId && speakerName) {
+        console.log(`Processing transcript for ${speakerName} (${speakerId})`);
+        
         // Check if we need to create a new transcript or update existing one
         const existingIndex = this.transcripts.findIndex(t => 
-          t.speakerId === this.currentSpeakerId && t.isFinal === false);
+          t.speakerId === speakerId && t.isFinal === false);
         
         if (existingIndex >= 0) {
           // Update existing interim transcript
@@ -111,8 +125,8 @@ class TranscriptionService {
           // Create a new transcript entry
           const newTranscript = {
             id: `transcript-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
-            speakerId: this.currentSpeakerId,
-            speakerName: this.currentSpeakerName,
+            speakerId: speakerId,
+            speakerName: speakerName,
             text: transcript,
             isFinal: event.results[0].isFinal,
             startTime: new Date().toISOString(),
@@ -126,18 +140,38 @@ class TranscriptionService {
         if (this.onTranscriptCallback) {
           this.onTranscriptCallback(this.transcripts);
         }
+      } else {
+        console.warn('Received transcript but no valid speaker is identified');
       }
     };
     
     this.recognition.onerror = (event) => {
       console.error('Transcription error:', event.error);
       
+      // Check if error is due to no audio input
+      if (event.error === 'no-speech' || event.error === 'audio-capture') {
+        // Verify if microphone is actually enabled
+        if (this.mediaStream) {
+          const audioTracks = this.mediaStream.getAudioTracks();
+          if (audioTracks.length === 0 || !audioTracks.some(track => track.enabled)) {
+            console.error('Audio track is disabled or unavailable');
+            if (this.onErrorCallback) {
+              this.onErrorCallback('Microphone appears to be muted or disconnected. Please check your audio settings.');
+            }
+            // Stop transcription if mic is definitely off
+            this.stopTranscription();
+            return;
+          }
+        }
+      }
+      
       if (this.onErrorCallback) {
         this.onErrorCallback(`Transcription error: ${event.error}`);
       }
       
       // Try to restart if it was a temporary error
-      if (event.error === 'network' || event.error === 'service-not-allowed') {
+      if (event.error === 'network' || event.error === 'service-not-allowed' || 
+          event.error === 'no-speech' || event.error === 'aborted') {
         this.restartRecognition();
       }
     };
@@ -160,12 +194,45 @@ class TranscriptionService {
    * @param {string} speakerName - Name of the current speaker
    * @param {Function} onTranscript - Callback for transcript updates
    * @param {Function} onError - Callback for errors
+   * @param {MediaStream} stream - Optional media stream to verify audio availability
+   * @param {Array} remotePeers - Optional array of remote peer objects with streams
    */
-  startTranscription(speakerId, speakerName, onTranscript, onError) {
+  startTranscription(speakerId, speakerName, onTranscript, onError, stream = null, remotePeers = []) {
     // Initialize if not already done
     if (!this.recognition && !this.initialize()) {
       if (onError) onError('Speech recognition is not supported in this browser');
       return false;
+    }
+    
+    // Verify we have audio access if stream is provided
+    if (stream) {
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.error('No audio tracks found in the provided stream');
+        if (onError) onError('No audio source found. Please check your microphone.');
+        return false;
+      }
+      
+      // Check if audio track is enabled
+      if (!audioTracks.some(track => track.enabled)) {
+        console.error('Audio track is disabled');
+        if (onError) onError('Your microphone is currently muted. Please unmute to use transcription.');
+        return false;
+      }
+      
+      console.log('Audio track verified:', audioTracks[0].label, 'enabled:', audioTracks[0].enabled);
+    } else {
+      // If no stream provided but we have a stored stream, use that for validation
+      if (this.mediaStream) {
+        const audioTracks = this.mediaStream.getAudioTracks();
+        if (audioTracks.length === 0 || !audioTracks.some(track => track.enabled)) {
+          console.error('Stored audio track is not available or disabled');
+          if (onError) onError('Your microphone is currently muted. Please unmute to use transcription.');
+          return false;
+        }
+      } else {
+        console.warn('No media stream provided for audio validation');
+      }
     }
     
     // Set current speaker
@@ -175,6 +242,27 @@ class TranscriptionService {
     // Set callbacks
     this.onTranscriptCallback = onTranscript;
     this.onErrorCallback = onError;
+    
+    // Store the stream reference for later use if provided
+    if (stream) {
+      this.mediaStream = stream;
+      
+      // Add local user as a remote audio source for consistent handling
+      this.addRemoteAudioSource(speakerId, speakerName, stream);
+    }
+    
+    // Add all remote peers' audio
+    if (remotePeers && remotePeers.length > 0) {
+      console.log(`Adding ${remotePeers.length} remote peers for transcription`);
+      
+      remotePeers.forEach(peer => {
+        if (peer && peer.id && peer.stream) {
+          this.addRemoteAudioSource(peer.id, peer.username || 'Remote User', peer.stream);
+        }
+      });
+    } else {
+      console.log('No remote peers provided for transcription');
+    }
     
     // Start recognition
     try {
@@ -217,6 +305,10 @@ class TranscriptionService {
       if (this.onTranscriptCallback) {
         this.onTranscriptCallback(this.transcripts);
       }
+      
+      // Clean up remote audio sources and detection
+      this.activeSpeaker = null;
+      this.remoteAudioSources = {};
     }
   }
   
@@ -226,14 +318,132 @@ class TranscriptionService {
   restartRecognition() {
     if (this.isTranscribing) {
       try {
+        // First, check if audio is still available
+        if (this.mediaStream) {
+          const audioTracks = this.mediaStream.getAudioTracks();
+          if (audioTracks.length === 0 || !audioTracks.some(track => track.enabled)) {
+            console.warn('Cannot restart transcription: microphone appears to be off');
+            if (this.onErrorCallback) {
+              this.onErrorCallback('Cannot restart transcription: please turn on your microphone.');
+            }
+            // Don't try to restart if microphone is off
+            this.isTranscribing = false;
+            return;
+          }
+        }
+        
         setTimeout(() => {
           console.log('Restarting transcription...');
           this.recognition.start();
         }, 1000);
       } catch (err) {
         console.error('Error restarting transcription:', err);
+        
+        // If we can't restart after multiple attempts, stop trying
+        if (err.name === 'NotAllowedError') {
+          this.isTranscribing = false;
+          if (this.onErrorCallback) {
+            this.onErrorCallback('Could not restart transcription. Please try again manually.');
+          }
+        }
       }
     }
+  }
+  
+  /**
+   * Get remote stream from peer connection if available
+   * @param {RTCPeerConnection} peerConnection - The WebRTC peer connection
+   * @returns {MediaStream|null} The remote media stream if available
+   */
+  getRemoteStreamFromPeer(peerConnection) {
+    if (!peerConnection) return null;
+    
+    // Try different methods to get the remote stream
+    // Method 1: getRemoteStreams() (older API)
+    if (typeof peerConnection.getRemoteStreams === 'function') {
+      const streams = peerConnection.getRemoteStreams();
+      if (streams && streams.length > 0) return streams[0];
+    }
+    
+    // Method 2: getReceivers() (newer API)
+    if (typeof peerConnection.getReceivers === 'function') {
+      const receivers = peerConnection.getReceivers();
+      if (receivers && receivers.length > 0) {
+        // Create a new stream from all receiver tracks
+        const tracks = receivers
+          .filter(receiver => receiver.track)
+          .map(receiver => receiver.track);
+        
+        if (tracks.length > 0) {
+          try {
+            return new MediaStream(tracks);
+          } catch (e) {
+            console.error('Failed to create MediaStream from tracks', e);
+          }
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Restart transcription with a new audio stream
+   * @param {MediaStream} stream - The new media stream to use
+   * @returns {boolean} True if restart was successful or no restart was needed
+   */
+  restartWithStream(stream) {
+    if (!stream) {
+      console.error('No stream provided to restart with');
+      return false;
+    }
+    
+    // Check if the stream has audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.error('Stream has no audio tracks');
+      return false;
+    }
+    
+    // Check if audio is enabled
+    const hasEnabledAudio = audioTracks.some(track => track.enabled);
+    
+    // Store the new stream regardless of state so we have the latest reference
+    this.mediaStream = stream;
+    
+    // If audio is not enabled, we should stop transcription if it's running
+    if (!hasEnabledAudio && this.isTranscribing) {
+      console.log('Audio is disabled, stopping transcription');
+      this.stopTranscription();
+      
+      if (this.onErrorCallback) {
+        this.onErrorCallback('Transcription stopped because microphone was turned off.');
+      }
+      
+      return false;
+    }
+    
+    // If audio is enabled and we're already transcribing, restart to use the new stream
+    if (hasEnabledAudio && this.isTranscribing) {
+      console.log('Restarting transcription with new stream');
+      
+      try {
+        this.stopTranscription();
+        
+        // Brief timeout to ensure clean restart
+        setTimeout(() => {
+          this.recognition.start();
+          this.isTranscribing = true;
+        }, 100);
+        
+        return true;
+      } catch (err) {
+        console.error('Error restarting transcription with new stream:', err);
+        return false;
+      }
+    }
+    
+    return true;
   }
   
   /**
@@ -671,6 +881,183 @@ class TranscriptionService {
    */
   isSpeechRecognitionSupported() {
     return this.isSupported;
+  }
+  
+  /**
+   * Check if audio is available and enabled in the current media stream
+   * @returns {boolean} True if audio is available and enabled
+   */
+  isAudioAvailable() {
+    if (!this.mediaStream) return false;
+    
+    const audioTracks = this.mediaStream.getAudioTracks();
+    return audioTracks.length > 0 && audioTracks.some(track => track.enabled);
+  }
+  
+  /**
+   * Update the media stream reference
+   * @param {MediaStream} stream - The new media stream
+   * @returns {boolean} True if stream was valid and updated
+   */
+  updateMediaStream(stream) {
+    if (!stream) return false;
+    
+    this.mediaStream = stream;
+    return true;
+  }
+  
+  /**
+   * Add or update a remote participant's audio stream
+   * @param {string} participantId - The remote participant's ID
+   * @param {string} participantName - The remote participant's display name
+   * @param {MediaStream} stream - The remote participant's media stream
+   * @returns {boolean} True if the remote audio was successfully added
+   */
+  addRemoteAudioSource(participantId, participantName, stream) {
+    if (!participantId || !stream) {
+      console.error('Invalid participant ID or stream');
+      return false;
+    }
+    
+    // Check if the stream has audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.log(`Remote participant ${participantId} has no audio tracks`);
+      return false;
+    }
+    
+    console.log(`Adding/updating remote audio for ${participantName} (${participantId})`);
+    
+    // Store the remote participant's audio information
+    this.remoteAudioSources[participantId] = {
+      id: participantId,
+      name: participantName,
+      stream: stream,
+      audioLevel: 0,
+      lastActive: null
+    };
+    
+    // Start audio level detection for voice activity detection
+    this._startAudioLevelDetection(participantId, stream);
+    
+    return true;
+  }
+  
+  /**
+   * Remove a remote participant's audio stream
+   * @param {string} participantId - The remote participant's ID
+   */
+  removeRemoteAudioSource(participantId) {
+    if (participantId && this.remoteAudioSources[participantId]) {
+      console.log(`Removing remote audio for ${this.remoteAudioSources[participantId].name} (${participantId})`);
+      delete this.remoteAudioSources[participantId];
+      
+      // If this was the active speaker, clear that state
+      if (this.activeSpeaker === participantId) {
+        this.activeSpeaker = null;
+      }
+    }
+  }
+  
+  /**
+   * Start monitoring audio levels to detect the active speaker
+   * @param {string} participantId - The participant's ID
+   * @param {MediaStream} stream - The audio stream to monitor
+   * @private
+   */
+  _startAudioLevelDetection(participantId, stream) {
+    try {
+      // Create audio context
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      
+      // Create source from stream
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      // Set up the data array
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      // Store the analyzer and arrays in the participant data
+      if (this.remoteAudioSources[participantId]) {
+        this.remoteAudioSources[participantId].analyser = analyser;
+        this.remoteAudioSources[participantId].dataArray = dataArray;
+        
+        // Start the detection loop
+        this._detectAudioLevel(participantId);
+      }
+    } catch (err) {
+      console.error('Error setting up audio level detection:', err);
+    }
+  }
+  
+  /**
+   * Continuously detect audio levels to determine active speaker
+   * @param {string} participantId - The participant's ID
+   * @private
+   */
+  _detectAudioLevel(participantId) {
+    if (!this.remoteAudioSources[participantId]) return;
+    
+    const participant = this.remoteAudioSources[participantId];
+    const { analyser, dataArray } = participant;
+    
+    // Get audio data
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Calculate average level
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    const avgLevel = sum / dataArray.length;
+    
+    // Store the level
+    participant.audioLevel = avgLevel;
+    
+    // If level is above threshold, mark as active
+    const AUDIO_THRESHOLD = 20;
+    if (avgLevel > AUDIO_THRESHOLD) {
+      participant.lastActive = Date.now();
+      
+      // Set as active speaker if not already and level is significant
+      if (this.activeSpeaker !== participantId && avgLevel > 30) {
+        this._setActiveSpeaker(participantId);
+      }
+    }
+    
+    // Continue the detection if still transcribing
+    if (this.isTranscribing) {
+      requestAnimationFrame(() => this._detectAudioLevel(participantId));
+    }
+  }
+  
+  /**
+   * Set the active speaker for transcription
+   * @param {string} participantId - The participant's ID
+   * @private
+   */
+  _setActiveSpeaker(participantId) {
+    // Don't switch speakers too quickly - require a minimum duration
+    const now = Date.now();
+    if (this.lastSpeakerChange && now - this.lastSpeakerChange < 1000) {
+      return;
+    }
+    
+    // Set the new active speaker
+    this.activeSpeaker = participantId;
+    this.lastSpeakerChange = now;
+    
+    const participant = this.remoteAudioSources[participantId];
+    if (participant) {
+      // Update current speaker
+      this.currentSpeakerId = participantId;
+      this.currentSpeakerName = participant.name;
+      
+      console.log(`Active speaker changed to ${participant.name} (${participantId})`);
+    }
   }
 }
 

@@ -36,9 +36,12 @@ import TranscriptionService from '../services/TranscriptionService';
  * @param {Object} props - Component props
  * @param {string} props.localUserId - The local user's ID
  * @param {string} props.localUserName - The local user's name
+ * @param {boolean} props.micOn - Whether the microphone is enabled
+ * @param {MediaStream} props.localStream - The local media stream
+ * @param {Object} props.peerRefs - Reference to peer connections
  * @param {Function} props.onError - Error handler function
  */
-function TranscriptionButton({ localUserId, localUserName, onError }) {
+function TranscriptionButton({ localUserId, localUserName, micOn, localStream, peerRefs, onError }) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [transcripts, setTranscripts] = useState([]);
@@ -64,6 +67,95 @@ function TranscriptionButton({ localUserId, localUserName, onError }) {
     };
   }, []);
   
+  // Monitor microphone state and stop transcription if it's turned off
+  useEffect(() => {
+    // Update the service with the current stream whenever it changes
+    if (localStream) {
+      transcriptionServiceRef.current.updateMediaStream(localStream);
+    }
+    
+    // If mic is turned off while transcribing, stop transcription
+    if (isTranscribing && !micOn) {
+      console.log('Microphone turned off, stopping transcription');
+      transcriptionServiceRef.current.stopTranscription();
+      setIsTranscribing(false);
+      onError?.('Transcription stopped because microphone was turned off.');
+    }
+  }, [micOn, isTranscribing, localStream, onError]);
+  
+  // Monitor audio tracks in the local stream
+  useEffect(() => {
+    if (!localStream) return;
+    
+    const handleTrackEnabled = (event) => {
+      // If mic was re-enabled while transcription is active, restart it
+      if (isTranscribing && event.target.kind === 'audio' && event.target.enabled) {
+        console.log('Audio track enabled, restarting transcription');
+        transcriptionServiceRef.current.restartWithStream(localStream);
+      }
+    };
+    
+    const audioTracks = localStream.getAudioTracks();
+    audioTracks.forEach(track => {
+      track.addEventListener('enabled', handleTrackEnabled);
+    });
+    
+    return () => {
+      audioTracks.forEach(track => {
+        track.removeEventListener('enabled', handleTrackEnabled);
+      });
+    };
+  }, [localStream, isTranscribing]);
+  
+  // Monitor changes in remote peers for transcription
+  useEffect(() => {
+    if (!isTranscribing || !peerRefs) return;
+    
+    // Update remote peers when they change while transcription is active
+    const updateRemotePeers = () => {
+      if (!peerRefs.current) return;
+      
+      const remotePeersData = peerRefs.current
+        .map(peer => {
+          // First check if peer has stream property directly
+          let peerStream = peer.stream;
+          
+          // If not, try to get it from the RTCPeerConnection using our helper
+          if (!peerStream && peer.peer) {
+            peerStream = transcriptionServiceRef.current.getRemoteStreamFromPeer(peer.peer);
+          }
+          
+          return {
+            id: peer.id,
+            username: peer.username || 'Remote User',
+            stream: peerStream
+          };
+        })
+        .filter(peer => peer.stream); // Only include peers with valid streams
+      
+      console.log(`Updating transcription with ${remotePeersData.length} remote peers`);
+      
+      // Update each remote peer in the service
+      remotePeersData.forEach(peer => {
+        transcriptionServiceRef.current.addRemoteAudioSource(
+          peer.id, 
+          peer.username, 
+          peer.stream
+        );
+      });
+    };
+    
+    // Set up a periodic check for peer changes
+    const intervalId = setInterval(updateRemotePeers, 5000);
+    
+    // Initial update
+    updateRemotePeers();
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isTranscribing, peerRefs]);
+  
   // Auto scroll to the bottom when transcripts update
   useEffect(() => {
     if (transcriptsEndRef.current && isDrawerOpen) {
@@ -85,7 +177,52 @@ function TranscriptionButton({ localUserId, localUserName, onError }) {
       transcriptionServiceRef.current.stopTranscription();
       setIsTranscribing(false);
     } else {
-      // Start transcription
+      // Check if microphone is enabled before starting transcription
+      if (!micOn) {
+        onError?.('Please turn on your microphone before starting transcription.');
+        return;
+      }
+      
+      // Verify we have access to the audio stream with a more detailed error
+      if (!localStream) {
+        onError?.('Unable to access microphone stream. Please reload the page or check browser permissions.');
+        return;
+      }
+      
+      const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        onError?.('No audio input detected. Please check if your microphone is properly connected.');
+        return;
+      }
+      
+      if (!audioTracks.some(track => track.enabled)) {
+        onError?.('Your microphone is currently muted. Please unmute it to use transcription.');
+        return;
+      }
+      
+      // Prepare remote peers data if available
+      let remotePeersData = [];
+      if (peerRefs && peerRefs.current) {
+        remotePeersData = peerRefs.current.map(peer => {
+          // First check if peer has stream property directly
+          let peerStream = peer.stream;
+          
+          // If not, try to get it from the RTCPeerConnection using our helper
+          if (!peerStream && peer.peer) {
+            peerStream = transcriptionServiceRef.current.getRemoteStreamFromPeer(peer.peer);
+          }
+          
+          return {
+            id: peer.id,
+            username: peer.username || 'Remote User',
+            stream: peerStream
+          };
+        }).filter(peer => peer.stream); // Only include peers with valid streams
+      }
+      
+      console.log(`Found ${remotePeersData.length} remote peers with audio streams`);
+      
+      // Start transcription with the audio stream and remote peers
       const success = transcriptionServiceRef.current.startTranscription(
         localUserId,
         localUserName,
@@ -94,7 +231,9 @@ function TranscriptionButton({ localUserId, localUserName, onError }) {
         },
         (errorMessage) => {
           onError?.(errorMessage);
-        }
+        },
+        localStream,
+        remotePeersData
       );
       
       if (success) {
@@ -202,25 +341,58 @@ function TranscriptionButton({ localUserId, localUserName, onError }) {
     }
   };
   
+  // Determine the tooltip message based on state
+  const getTooltipMessage = () => {
+    if (!isSupported) return "Transcription not supported in this browser";
+    if (isTranscribing) return "Stop Transcription";
+    if (!micOn) return "Microphone is off - Turn on microphone to enable transcription";
+    
+    // Check audio tracks in local stream
+    if (localStream) {
+      const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        return "No audio input detected - Check microphone connection";
+      }
+      if (!audioTracks.some(track => track.enabled)) {
+        return "Microphone is muted - Unmute to enable transcription";
+      }
+    }
+    
+    return "Start Transcription";
+  };
+  
   return (
     <>
-      <Tooltip title={isSupported ? (isTranscribing ? "Stop Transcription" : "Start Transcription") : "Transcription not supported in this browser"}>
+      <Tooltip title={getTooltipMessage()}>
         <span>
           <IconButton
             onClick={toggleTranscription}
-            disabled={!isSupported}
+            disabled={!isSupported || (!isTranscribing && !micOn)}
             sx={{ 
-              bgcolor: isTranscribing ? 'rgba(103, 58, 183, 0.1)' : 'rgba(33, 150, 243, 0.1)', 
-              color: isTranscribing ? 'var(--color-primary)' : 'var(--color-secondary)', 
+              position: 'relative',
+              bgcolor: isTranscribing ? 'rgba(103, 58, 183, 0.1)' : (!micOn ? 'rgba(244, 67, 54, 0.05)' : 'rgba(33, 150, 243, 0.1)'), 
+              color: isTranscribing 
+                ? 'var(--color-primary)' 
+                : (!micOn ? 'rgba(244, 67, 54, 0.5)' : 'var(--color-secondary)'), 
               borderRadius: 'var(--button-radius)',
               p: { xs: 1, sm: 1.5 },
               '&:hover': {
-                bgcolor: isTranscribing ? 'rgba(103, 58, 183, 0.2)' : 'rgba(33, 150, 243, 0.2)'
+                bgcolor: isTranscribing 
+                  ? 'rgba(103, 58, 183, 0.2)' 
+                  : (!micOn ? 'rgba(244, 67, 54, 0.1)' : 'rgba(33, 150, 243, 0.2)')
               },
               '&.Mui-disabled': {
-                bgcolor: 'rgba(0, 0, 0, 0.05)',
-                color: 'rgba(0, 0, 0, 0.26)'
-              }
+                bgcolor: !micOn ? 'rgba(244, 67, 54, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+                color: !micOn ? 'rgba(244, 67, 54, 0.4)' : 'rgba(0, 0, 0, 0.26)'
+              },
+              '&::after': !micOn ? {
+                content: '""',
+                position: 'absolute',
+                width: '75%',
+                height: '2px',
+                background: 'rgba(244, 67, 54, 0.5)',
+                transform: 'rotate(45deg)'
+              } : {}
             }}
           >
             {isTranscribing ? <RecordVoiceOverIcon /> : <VoiceOverOffIcon />}

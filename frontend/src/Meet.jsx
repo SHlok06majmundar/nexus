@@ -194,6 +194,14 @@ export default function Meet() {
 		// Mark as initialized to prevent double initialization
 		setIsInitialized(true);
 		
+		// Add a safety timeout to clear the "connecting" state if it persists for too long
+		const connectingTimeout = setTimeout(() => {
+			if (connectionState === 'connecting') {
+				console.log('Connection state still "connecting" after timeout, setting to connected');
+				setConnectionState('connected');
+			}
+		}, 10000); // 10 seconds is reasonable for most connection scenarios
+		
 		console.log(`Initializing meeting: ${meetingId} for user: ${username}`);
 		
 		// Enhanced socket.io initialization with better reconnection parameters
@@ -358,6 +366,15 @@ export default function Meet() {
 					hasAudio: micOn, 
 					hasVideo: videoOn 
 				});
+				
+				// Set a timeout to mark as connected even if no peers join
+				// This ensures we don't get stuck in "connecting" state when alone
+				setTimeout(() => {
+					if (connectionState === 'connecting' && peersRef.current.length === 0) {
+						console.log('No peers joined yet, setting state to connected');
+						setConnectionState('connected');
+					}
+				}, 5000);
 				
 				// Monitor for device changes
 				navigator.mediaDevices.ondevicechange = () => {
@@ -608,6 +625,10 @@ export default function Meet() {
 		
 		socketRef.current.on('room-users', (participants) => {
 			console.log('Current room participants:', participants);
+			
+			// When we receive the room users list, we've successfully joined
+			// Mark as connected, regardless of peer connection status
+			setConnectionState('connected');
 		});
 
 		// WebRTC signaling with enhanced error handling
@@ -983,6 +1004,15 @@ export default function Meet() {
 	
 	// Enhanced connection state monitoring and auto-recovery
 	useEffect(() => {
+		// If there are no peers yet but socket is connected, consider it connected
+		if (peersRef.current.length === 0 && socketRef.current && socketRef.current.connected) {
+			// No peers but socket is connected - we're alone in the meeting
+			setConnectionState('connected');
+			setShowReconnectButton(false);
+			setError('');
+			return;
+		}
+		
 		// If we have at least one connected peer, show as connected
 		const hasConnectedPeer = peersRef.current.some(
 			p => p.peer && p.peer.connectionState === 'connected'
@@ -1038,6 +1068,23 @@ export default function Meet() {
 			return () => clearTimeout(reconnectionTimer);
 		}
 	}, [peers]);
+	
+	// Add a safety timeout to clear the "connecting" state if it persists for too long
+	useEffect(() => {
+		// Only set the timeout if we're in connecting state
+		if (connectionState !== 'connecting') return;
+		
+		console.log('Setting connection state timeout...');
+		const connectingTimeout = setTimeout(() => {
+			if (connectionState === 'connecting' && socketRef.current && socketRef.current.connected) {
+				console.log('Connection state still "connecting" after timeout, setting to connected');
+				setConnectionState('connected');
+			}
+		}, 10000); // 10 seconds is reasonable for most connection scenarios
+		
+		// Clean up timeout when component unmounts or state changes
+		return () => clearTimeout(connectingTimeout);
+	}, [connectionState]);
 	
 	// Monitor connection health regularly and try to recover
 	useEffect(() => {
@@ -1763,6 +1810,20 @@ export default function Meet() {
 				</Box>
 			)}
 			
+			{/* Solo meeting notification - when connected but with no other participants */}
+			{connectionState === 'connected' && peers.length === 0 && (
+				<Box sx={{ 
+					bgcolor: '#E1F5FE', 
+					p: 1, 
+					textAlign: 'center',
+					borderBottom: '1px solid #81D4FA'
+				}}>
+					<Typography variant="body2">
+						You're the only one here. Share the meeting link to invite others.
+					</Typography>
+				</Box>
+			)}
+			
 			{connectionState === 'failed' && (
 				<Box sx={{ 
 					bgcolor: '#FFEBEE', 
@@ -2198,6 +2259,9 @@ export default function Meet() {
 				<TranscriptionButton 
 					localUserId={socketRef.current?.id || ''}
 					localUserName={username}
+					micOn={micOn}
+					localStream={streamRef.current}
+					peerRefs={peersRef}
 					onError={(message) => showError(message, 'error')}
 				/>
 			</Box>
