@@ -79,6 +79,7 @@ export default function Meet() {
 	const [chatOpen, setChatOpen] = useState(false);
 	const [error, setError] = useState('');
 	const [errorSeverity, setErrorSeverity] = useState('info'); // 'info', 'warning', 'error'
+	const [activeScreenSharingUser, setActiveScreenSharingUser] = useState(null); // Track who is sharing screen
 	
 	// Connection state
 	const [connectionState, setConnectionState] = useState('connecting');
@@ -780,6 +781,13 @@ export default function Meet() {
 		// Handle remote user screen sharing events with optimized UI response
 		socketRef.current.on('user-screen-share', ({ userId, username, isSharing }) => {
 			console.log(`User ${username} (${userId}) screen sharing status: ${isSharing}`);
+			
+			// Update the active screen sharing user
+			if (isSharing) {
+				setActiveScreenSharingUser(userId);
+			} else if (activeScreenSharingUser === userId) {
+				setActiveScreenSharingUser(null);
+			}
 			
 			// Update our peer state with screen sharing status
 			const peerIndex = peersRef.current.findIndex(p => p.id === userId);
@@ -1509,7 +1517,7 @@ export default function Meet() {
 		// Enhanced track handling with detailed logging and reliability improvements
 		peer.ontrack = e => {
 			console.log(`Track received from ${targetId}:`, e.streams?.[0]);
-			console.log(`Received ${e.streams?.length || 0} streams with ${e.track ? 1 : 0} tracks`);
+			console.log(`Received ${e.streams?.length || 0} streams with ${e.track ? 1 : 0} tracks (${e.track?.kind || 'unknown type'})`);
 
 			// Validate streams
 			if (!e.streams || e.streams.length === 0) {
@@ -1526,6 +1534,18 @@ export default function Meet() {
 
 			// Use the first stream
 			let mediaStream = e.streams[0];
+			
+			// SCREEN SHARING FIX: Detect if this is a screen sharing track
+			const isScreenShareTrack = e.track && (
+				e.track.label.includes('screen') || 
+				e.track.label.includes('window') || 
+				e.track.label.includes('tab') ||
+				(peerObj.isScreenSharing && e.track.kind === 'video')
+			);
+			
+			if (isScreenShareTrack && e.track.kind === 'video') {
+				console.log(`Detected screen sharing video track from peer ${targetId}: ${e.track.label}`);
+			}
 
 			// Log track details and attach event handlers
 			e.track.onended = () => {
@@ -1570,9 +1590,35 @@ export default function Meet() {
 			// Update video element for this peer
 			const remoteVideo = document.getElementById('video-' + targetId);
 			if (remoteVideo) {
+				// Set the media stream as source
 				remoteVideo.srcObject = mediaStream;
+				
+				// Configure for screen sharing if detected
+				if (isScreenShareTrack && e.track.kind === 'video') {
+					console.log(`Configuring video element for screen sharing from peer ${targetId}`);
+					remoteVideo.style.objectFit = 'contain'; // Better for screen content
+					remoteVideo.style.backgroundColor = '#000'; // Black background
+				} else {
+					// Regular video settings
+					remoteVideo.style.objectFit = 'cover'; // Better for person
+				}
+				
+				// Show video element if video is enabled
 				remoteVideo.style.display = peerObj.hasVideo ? 'block' : 'none';
+				
+				// Attempt to play the video
 				remoteVideo.play().catch(err => console.error(`Error playing video for peer ${targetId}:`, err));
+				
+				// Force a repaint to ensure proper display
+				setTimeout(() => {
+					try {
+						remoteVideo.style.display = 'none';
+						void remoteVideo.offsetHeight; // Force repaint
+						remoteVideo.style.display = peerObj.hasVideo ? 'block' : 'none';
+					} catch (e) {
+						console.error('Error forcing video repaint:', e);
+					}
+				}, 500);
 			}
 		};
 		
@@ -1878,8 +1924,15 @@ export default function Meet() {
 				username: username
 			});
 			
-			// Also update our own UI state immediately
+			// Update our own UI state immediately
 			setIsScreenSharing(isSharing);
+			
+			// Update the active screen sharing user
+			if (isSharing) {
+				setActiveScreenSharingUser(socketRef.current.id);
+			} else if (activeScreenSharingUser === socketRef.current.id) {
+				setActiveScreenSharingUser(null);
+			}
 		}
 	};
 	
@@ -1929,8 +1982,66 @@ export default function Meet() {
 		// Notify all participants that we stopped sharing screen
 		notifyScreenSharingChange(false);
 		
-		// Remove screen-sharing class from local video container
+		// Ensure we restore the original stream to prevent blank screen
 		try {
+			// First make sure we have access to our camera stream
+			if (streamRef.current && localVideoRef.current) {
+				console.log('Restoring original camera stream to video element');
+				
+				// First check if there's a stored _originalStream to restore
+				if (streamRef.current._originalStream) {
+					console.log('Found stored original stream, restoring it');
+					localVideoRef.current.srcObject = streamRef.current._originalStream;
+					delete streamRef.current._originalStream;
+				} else {
+					// Fall back to the current stream in streamRef
+					console.log('No stored stream found, using current stream');
+					localVideoRef.current.srcObject = streamRef.current;
+				}
+				
+				// Double-check that we have a valid stream
+				if (!localVideoRef.current.srcObject) {
+					console.warn('Failed to restore stream, attempting to get fresh media');
+					// Last resort: try to get fresh media
+					navigator.mediaDevices.getUserMedia({ 
+						video: videoOn,
+						audio: micOn
+					}).then(freshStream => {
+						console.log('Acquired fresh media stream after screen share');
+						localVideoRef.current.srcObject = freshStream;
+						streamRef.current = freshStream;
+						
+						// Ensure tracks have correct enabled state
+						freshStream.getVideoTracks().forEach(track => track.enabled = videoOn);
+						freshStream.getAudioTracks().forEach(track => track.enabled = !micOn);
+					}).catch(err => {
+						console.error('Failed to acquire fresh media after screen share:', err);
+						showError('Failed to restore camera after screen sharing. Try refreshing the page.', 'error');
+					});
+				}
+				
+				// Ensure video tracks reflect current videoOn state
+				const videoTracks = localVideoRef.current.srcObject?.getVideoTracks();
+				if (videoTracks && videoTracks.length > 0) {
+					videoTracks.forEach(track => {
+						track.enabled = videoOn;
+						console.log(`Restored video track ${track.id} enabled: ${videoOn}`);
+					});
+				}
+				
+				// Ensure audio tracks reflect current micOn state
+				const audioTracks = localVideoRef.current.srcObject?.getAudioTracks();
+				if (audioTracks && audioTracks.length > 0) {
+					audioTracks.forEach(track => {
+						track.enabled = !micOn; // Remember micOn=true means muted=false
+						console.log(`Restored audio track ${track.id} enabled: ${!micOn}`);
+					});
+				}
+			} else {
+				console.warn('Missing streamRef or localVideoRef, cannot restore stream');
+			}
+			
+			// Remove screen-sharing class from local video container
 			const localVideoContainer = localVideoRef.current?.parentElement?.parentElement;
 			if (localVideoContainer) {
 				// Disconnect the observer if it exists
@@ -1946,7 +2057,8 @@ export default function Meet() {
 				console.warn('Could not find local video container to remove screen-sharing class');
 			}
 		} catch (err) {
-			console.error('Error removing screen-sharing class:', err);
+			console.error('Error in handleStopScreenShare:', err);
+			showError('An error occurred when stopping screen sharing. You may need to refresh the page.', 'error');
 		}
 	};
 	
@@ -2455,6 +2567,7 @@ export default function Meet() {
 					onError={(message) => showError(message, 'error')}
 					isScreenSharing={isScreenSharing}
 					setIsScreenSharing={setIsScreenSharing}
+					activeScreenSharingUser={activeScreenSharingUser}
 				/>
 				
 				<IconButton 

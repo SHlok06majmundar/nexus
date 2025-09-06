@@ -60,14 +60,21 @@
   max-width: 100% !important;
   margin-bottom: 16px;
   border: 2px solid var(--color-success, #4caf50);
-  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5) !important;
+  box-shadow: 0 0 15px rgba(76, 175, 80, 0.7) !important;
   transition: all 0.3s ease-in-out;
   position: relative;
+  animation: highlight-screen-share 0.5s ease-in-out;
+}
+
+@keyframes highlight-screen-share {
+  0% { transform: scale(0.98); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .peer-video-container.screen-sharing video {
   object-fit: contain !important;
   background-color: #000 !important;
+  max-height: 70vh;
 }
 
 /* Screen sharing indicator */
@@ -78,10 +85,34 @@
   right: 10px;
   background-color: rgba(76, 175, 80, 0.9);
   color: white;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: bold;
   z-index: 10;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: pulse-screen-share 2s infinite;
+}
+
+@keyframes pulse-screen-share {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+/* When screen sharing is disabled because someone else is sharing */
+.screen-sharing-disabled-icon {
+  position: relative;
+  opacity: 0.6;
+}
+
+.screen-sharing-disabled-icon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: linear-gradient(45deg, transparent 45%, rgba(244, 67, 54, 0.5) 45%, rgba(244, 67, 54, 0.5) 55%, transparent 55%);
+  pointer-events: none;
 }

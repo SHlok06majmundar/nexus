@@ -77,44 +77,11 @@ function ScreenShareButton({
         const videoTrack = screenStreamRef.current.getVideoTracks()[0];
         const audioTracks = screenStreamRef.current.getAudioTracks();
         
-        // First remove any existing video senders to prevent conflicts
-        const existingVideoSenders = peer.getSenders().filter(sender => 
-          sender.track && sender.track.kind === 'video'
-        );
-        
-        for (const sender of existingVideoSenders) {
-          try {
-            peer.removeTrack(sender);
-            console.log(`Removed existing video sender from new peer ${newPeerId}`);
-          } catch (err) {
-            console.warn(`Could not remove existing video sender: ${err.message}`);
-          }
-        }
-        
         // Add screen video track
         if (videoTrack) {
           try {
             console.log(`Adding screen video track to new peer ${newPeerId}`);
-            const sender = peer.addTrack(videoTrack, screenStreamRef.current);
-            videoTrack.contentHint = "detail"; // Optimize encoding
-            
-            // Set video priority to high for better quality
-            try {
-              const params = sender.getParameters();
-              if (!params.encodings) {
-                params.encodings = [{}];
-              }
-              params.encodings.forEach(encoding => {
-                encoding.maxBitrate = 2500000; // 2.5 Mbps for screen sharing
-                encoding.scaleResolutionDownBy = 1.0; // Don't scale down
-                encoding.priority = 'high';
-              });
-              sender.setParameters(params).catch(err => 
-                console.warn(`Could not set video parameters: ${err.message}`)
-              );
-            } catch (paramErr) {
-              console.warn(`Could not set video parameters: ${paramErr.message}`);
-            }
+            peer.addTrack(videoTrack, screenStreamRef.current);
           } catch (err) {
             console.error(`Error adding video track to new peer: ${err.message}`);
           }
@@ -322,10 +289,7 @@ function ScreenShareButton({
       
       // Update the video element with screen share
       if (videoRef && videoRef.current) {
-        // For local display we use the direct screen stream
-        videoRef.current.srcObject = screenStream; 
-        videoRef.current.style.objectFit = 'contain'; // Better for screen content
-        console.log('Set local video element to show screen share with contain object-fit');
+        videoRef.current.srcObject = screenStream; // Just show the screen video locally
       }
       
       // Send combined stream (screen+mic) to all peers efficiently
@@ -372,56 +336,31 @@ function ScreenShareButton({
               if (screenVideoTrack) {
                 console.log(`Adding screen video track to peer ${id}`);
                 
-                // IMPORTANT FIX: First stop and remove any existing video track
-                // This ensures the screen sharing track will be displayed correctly
-                const videoSenders = peer.getSenders().filter(s => s.track && s.track.kind === 'video');
+                // Try to replace existing video track first (faster than adding new track)
+                const videoSender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
                 
-                // Store track references to restore later
-                if (videoSenders.length > 0 && !peer._previousTracks) {
-                  peer._previousTracks = { video: [], audio: [] };
-                  videoSenders.forEach(sender => {
-                    if (sender.track && sender.track.readyState === 'live') {
-                      peer._previousTracks.video.push(sender.track.clone());
-                    }
-                  });
-                  console.log(`Stored ${peer._previousTracks.video.length} original video tracks for peer ${id}`);
-                }
-                
-                // Remove existing video senders to prevent conflicts
-                for (const sender of videoSenders) {
+                if (videoSender) {
                   try {
-                    peer.removeTrack(sender);
-                    console.log(`Removed existing video sender from peer ${id}`);
-                  } catch (removeErr) {
-                    console.warn(`Could not remove existing video sender: ${removeErr.message}`);
-                  }
-                }
-                
-                // Add the screen video track as a new track
-                try {
-                  const sender = peer.addTrack(screenVideoTrack, combinedStream);
-                  screenVideoTrack.contentHint = "detail";
-                  console.log(`Added new screen video track to peer ${id}`);
-                  
-                  // Set video priority to high for better quality
-                  try {
-                    const params = sender.getParameters();
-                    if (!params.encodings) {
-                      params.encodings = [{}];
+                    await videoSender.replaceTrack(screenVideoTrack);
+                    screenVideoTrack.contentHint = "detail"; // Optimize encoding
+                    console.log(`Successfully replaced video track for peer ${id}`);
+                  } catch (err) {
+                    console.warn(`Could not replace video track: ${err.message}, trying addTrack`);
+                    try {
+                      peer.addTrack(screenVideoTrack, combinedStream);
+                    } catch (addErr) {
+                      console.error(`Failed to add screen video track: ${addErr.message}`);
                     }
-                    params.encodings.forEach(encoding => {
-                      encoding.maxBitrate = 2500000; // Increase max bitrate to 2.5 Mbps
-                      encoding.scaleResolutionDownBy = 1.0; // Don't scale down resolution
-                      encoding.priority = 'high';
-                    });
-                    sender.setParameters(params).catch(err => 
-                      console.warn(`Could not set video parameters: ${err.message}`)
-                    );
-                  } catch (paramErr) {
-                    console.warn(`Could not set video parameters: ${paramErr.message}`);
                   }
-                } catch (err) {
-                  console.error(`Error adding screen video track: ${err.message}`);
+                } else {
+                  // No existing video sender, add a new one
+                  try {
+                    peer.addTrack(screenVideoTrack, combinedStream);
+                    screenVideoTrack.contentHint = "detail";
+                    console.log(`Added new screen video track to peer ${id}`);
+                  } catch (err) {
+                    console.error(`Error adding screen video track: ${err.message}`);
+                  }
                 }
               }
               
@@ -781,46 +720,36 @@ function ScreenShareButton({
                 }
               });
               
-                // Restore previous tracks if available
-                if (peer._previousTracks) {
-                  // Restore video tracks with better handling
-                  if (peer._previousTracks.video && peer._previousTracks.video.length > 0) {
-                    console.log(`Restoring ${peer._previousTracks.video.length} original video tracks for peer ${id}`);
-                    
-                    // Check if the original tracks are still valid
-                    const validVideoTracks = peer._previousTracks.video.filter(track => 
-                      track && track.readyState === 'live' && !screenTrackIds.includes(track.id)
+              // Restore previous tracks if available
+              if (peer._previousTracks) {
+                // Restore video tracks
+                if (peer._previousTracks.video && peer._previousTracks.video.length > 0) {
+                  console.log(`Restoring ${peer._previousTracks.video.length} original video tracks for peer ${id}`);
+                  
+                  // Check if the original tracks are still valid
+                  const validVideoTracks = peer._previousTracks.video.filter(track => 
+                    track && track.readyState === 'live' && !screenTrackIds.includes(track.id)
+                  );
+                  
+                  // Add them back if needed
+                  validVideoTracks.forEach(track => {
+                    // Check if this track is already present
+                    const exists = peer.getSenders().some(s => 
+                      s.track && s.track.id === track.id
                     );
                     
-                    // Make sure we don't have any active video tracks before restoring
-                    const currentVideoSenders = peer.getSenders().filter(sender =>
-                      sender.track && sender.track.kind === 'video'
-                    );
-                    
-                    // Remove any remaining video senders to avoid conflicts
-                    if (currentVideoSenders.length > 0) {
-                      console.log(`Removing ${currentVideoSenders.length} current video senders before restoring originals`);
-                      currentVideoSenders.forEach(sender => {
-                        try {
-                          peer.removeTrack(sender);
-                        } catch (err) {
-                          console.error(`Error removing video sender: ${err.message}`);
-                        }
-                      });
-                    }
-                    
-                    // Now add the original tracks back
-                    validVideoTracks.forEach(track => {
+                    if (!exists) {
                       try {
-                        console.log(`Re-adding original video track to peer ${id}: ${track.label}`);
-                        // Make sure track is enabled
-                        track.enabled = true;
-                        peer.addTrack(track, streamRef.current || new MediaStream([track]));
+                        console.log(`Re-adding original video track to peer ${id}`);
+                        peer.addTrack(track);
                       } catch (err) {
                         console.error(`Error re-adding video track to peer ${id}:`, err);
                       }
-                    });
-                  }                // Restore audio tracks - this is crucial for mic audio after screen sharing
+                    }
+                  });
+                }
+                
+                // Restore audio tracks - this is crucial for mic audio after screen sharing
                 if (peer._previousTracks.audio && peer._previousTracks.audio.length > 0) {
                   console.log(`Restoring ${peer._previousTracks.audio.length} original audio tracks for peer ${id}`);
                   
