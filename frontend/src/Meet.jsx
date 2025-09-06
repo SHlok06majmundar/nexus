@@ -787,77 +787,117 @@ export default function Meet() {
 				// Update status
 				peersRef.current[peerIndex].isScreenSharing = isSharing;
 				
-				// Try to get the video element for this peer
-				try {
-					const videoElement = document.getElementById(`video-${userId}`);
-					if (videoElement) {
-						// Optimize video display for screen sharing
-						if (isSharing) {
-							// If sharing, optimize for screen content
-							videoElement.style.objectFit = 'contain'; // Better for screen content
-							videoElement.style.backgroundColor = '#000'; // Black background
-							
-							// Add higher priority to this video element
-							videoElement.setAttribute('importance', 'high');
-							
-							// Prioritize quality over smoothness for screen content
-							try {
-								if (videoElement.srcObject) {
-									const videoTrack = videoElement.srcObject.getVideoTracks()[0];
-									if (videoTrack) {
-										// Try to set content hints for better rendering
-										videoTrack.contentHint = 'detail';
-									}
-								}
-							} catch (err) {
-								console.warn('Could not set content hint on remote track', err);
-							}
-						} else {
-							// Reset to normal video chat settings
-							videoElement.style.objectFit = 'cover'; // Better for faces
-							videoElement.removeAttribute('importance');
-							
-							// Reset content hints
-							try {
-								if (videoElement.srcObject) {
-									const videoTrack = videoElement.srcObject.getVideoTracks()[0];
-									if (videoTrack) {
-										videoTrack.contentHint = '';
-									}
-								}
-							} catch (err) {
-								console.warn('Could not reset content hint on remote track', err);
-							}
-						}
-						
-						// Force a refresh of the video element
-						videoElement.load();
-					}
-				} catch (err) {
-					console.error('Error optimizing video for screen sharing:', err);
-				}
-				
-				// Update UI state
-				setPeers([...peersRef.current]);
-				
-				// Show notification with appropriate UI response
+				// Show notification first for immediate feedback
 				if (isSharing) {
 					showError(`${username} is sharing their screen`, 'info');
-					
-					// Scroll the video into view if not visible
-					setTimeout(() => {
-						try {
-							const peerElement = document.getElementById(`peer-${userId}`);
-							if (peerElement && typeof peerElement.scrollIntoView === 'function') {
-								peerElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-							}
-						} catch (e) {
-							console.warn('Could not scroll to shared screen', e);
-						}
-					}, 500);
 				} else {
 					showError(`${username} stopped sharing their screen`, 'info');
 				}
+				
+				// Update UI state immediately
+				setPeers([...peersRef.current]);
+				
+				// Find the peer container element to apply our CSS class
+				const peerContainer = document.getElementById(`peer-${userId}`);
+				if (peerContainer) {
+					if (isSharing) {
+						peerContainer.classList.add('screen-sharing');
+						console.log(`Added screen-sharing class to peer container for ${userId}`);
+					} else {
+						peerContainer.classList.remove('screen-sharing');
+						console.log(`Removed screen-sharing class from peer container for ${userId}`);
+					}
+				}
+				
+				// Give the browser time to update the streams
+				setTimeout(() => {
+					try {
+						// Get all video elements for this peer
+						// There may be multiple if both camera and screen are shared
+						const peerVideoElements = document.querySelectorAll(`[id^="video-${userId}"]`);
+						console.log(`Found ${peerVideoElements.length} video elements for peer ${userId}`);
+						
+						if (peerVideoElements.length > 0) {
+							// Determine which video element is showing the screen
+							let screenVideoElement = null;
+							
+							for (const videoEl of peerVideoElements) {
+								if (videoEl.srcObject) {
+									const videoTracks = videoEl.srcObject.getVideoTracks();
+									for (const track of videoTracks) {
+										if (track.label && (track.label.includes('screen') || track.label.includes('window') || track.label.includes('tab'))) {
+											screenVideoElement = videoEl;
+											break;
+										}
+									}
+								}
+								
+								if (screenVideoElement) break;
+							}
+							
+							// If we can't determine which is the screen, use the last video element
+							if (!screenVideoElement && isSharing) {
+								screenVideoElement = peerVideoElements[peerVideoElements.length - 1];
+							}
+							
+							if (screenVideoElement) {
+								// Optimize video display for screen sharing
+								if (isSharing) {
+									console.log(`Optimizing video element for screen content: ${screenVideoElement.id}`);
+									// If sharing, optimize for screen content
+									screenVideoElement.style.objectFit = 'contain'; // Better for screen content
+									screenVideoElement.style.backgroundColor = '#000'; // Black background
+									
+									// Add higher priority to this video element
+									screenVideoElement.setAttribute('importance', 'high');
+									
+									// Ensure the video is visible
+									screenVideoElement.style.display = 'block';
+									
+									// Make screen video larger if multiple videos from same peer
+									if (peerVideoElements.length > 1) {
+										screenVideoElement.parentElement.style.width = '100%';
+										screenVideoElement.parentElement.style.height = 'auto';
+										screenVideoElement.parentElement.style.maxWidth = '100%';
+										screenVideoElement.style.width = '100%';
+									}
+									
+									// Scroll the video into view
+									setTimeout(() => {
+										try {
+											screenVideoElement.scrollIntoView({
+												behavior: 'smooth',
+												block: 'nearest'
+											});
+										} catch (e) {
+											console.warn('Could not scroll to screen share video', e);
+										}
+									}, 500);
+								} else {
+									// Reset styles when screen sharing stops
+									screenVideoElement.style.objectFit = 'cover';
+									screenVideoElement.removeAttribute('importance');
+									
+									if (peerVideoElements.length > 1) {
+										const parentElement = screenVideoElement.parentElement;
+										if (parentElement) {
+											// Reset to default styles when screen sharing ends
+											parentElement.style.width = '';
+											parentElement.style.height = '';
+											parentElement.style.maxWidth = '';
+											screenVideoElement.style.width = '';
+										}
+									}
+								}
+							}
+						} else {
+							// If we don't have video elements yet, we might need to wait for them
+							console.warn(`No video elements found for peer ${userId}, screen sharing might not be visible yet`);
+						}
+					} catch (err) {
+						console.error('Error optimizing video for screen sharing:', err);
+					}
+				}, 2000); // Give time for WebRTC to update streams
 			} else {
 				console.warn(`Received screen share update for unknown peer: ${userId}`);
 			}
@@ -1827,12 +1867,19 @@ export default function Meet() {
 	// Notify peers about screen sharing status changes
 	const notifyScreenSharingChange = (isSharing) => {
 		if (socketRef.current) {
-			socketRef.current.emit('user-screen-share', {
+			// Use the correct event name based on state
+			const eventName = isSharing ? 'screen-share-started' : 'screen-share-stopped';
+			
+			console.log(`Emitting ${eventName} event for room: ${meetingId}`);
+			
+			socketRef.current.emit(eventName, {
 				roomId: meetingId,
 				userId: socketRef.current.id,
-				username: username,
-				isSharing: isSharing
+				username: username
 			});
+			
+			// Also update our own UI state immediately
+			setIsScreenSharing(isSharing);
 		}
 	};
 	
@@ -1842,6 +1889,37 @@ export default function Meet() {
 		
 		// Notify all participants that we're sharing screen
 		notifyScreenSharingChange(true);
+		
+		// Apply screen-sharing class to local video container
+		try {
+			const localVideoContainer = localVideoRef.current?.parentElement?.parentElement;
+			if (localVideoContainer) {
+				localVideoContainer.classList.add('screen-sharing');
+				console.log('Added screen-sharing class to local video container');
+				
+				// Add an event listener to check if the class gets removed accidentally
+				const observer = new MutationObserver(mutations => {
+					mutations.forEach(mutation => {
+						if (mutation.type === 'attributes' && 
+						    mutation.attributeName === 'class' && 
+						    !localVideoContainer.classList.contains('screen-sharing')) {
+							console.log('screen-sharing class was accidentally removed, re-adding it');
+							localVideoContainer.classList.add('screen-sharing');
+						}
+					});
+				});
+				
+				// Start observing the container
+				observer.observe(localVideoContainer, { attributes: true });
+				
+				// Store the observer in a ref for cleanup
+				localVideoContainer._screenSharingObserver = observer;
+			} else {
+				console.warn('Could not find local video container to apply screen-sharing class');
+			}
+		} catch (err) {
+			console.error('Error applying screen-sharing class:', err);
+		}
 	};
 	
 	// Handle screen sharing stopped
@@ -1850,6 +1928,26 @@ export default function Meet() {
 		
 		// Notify all participants that we stopped sharing screen
 		notifyScreenSharingChange(false);
+		
+		// Remove screen-sharing class from local video container
+		try {
+			const localVideoContainer = localVideoRef.current?.parentElement?.parentElement;
+			if (localVideoContainer) {
+				// Disconnect the observer if it exists
+				if (localVideoContainer._screenSharingObserver) {
+					localVideoContainer._screenSharingObserver.disconnect();
+					delete localVideoContainer._screenSharingObserver;
+					console.log('Removed screen sharing mutation observer');
+				}
+				
+				localVideoContainer.classList.remove('screen-sharing');
+				console.log('Removed screen-sharing class from local video container');
+			} else {
+				console.warn('Could not find local video container to remove screen-sharing class');
+			}
+		} catch (err) {
+			console.error('Error removing screen-sharing class:', err);
+		}
 	};
 	
 	// Leave meeting with proper cleanup
@@ -2194,8 +2292,13 @@ export default function Meet() {
 						</Box>
 					)}
 				</Paper>
-				{peers.map(({ id, username: peerUsername, hasVideo }) => (
-					<Paper key={id} id={`peer-${id}`} elevation={2} sx={{ 
+				{peers.map((peer) => (
+					<Paper 
+						key={peer.id} 
+						id={`peer-${peer.id}`} 
+						className={`peer-video-container${peer.isScreenSharing ? ' screen-sharing' : ''}`} 
+						elevation={2} 
+						sx={{ 
 						p: { xs: 1, sm: 2 }, 
 						bgcolor: '#fff', 
 						borderRadius: 'var(--card-radius)',
@@ -2213,7 +2316,7 @@ export default function Meet() {
 							paddingBottom: '56.25%' // 16:9 aspect ratio
 						}}>
 							<video 
-								id={'video-' + id} 
+								id={'video-' + peer.id} 
 								autoPlay 
 								playsInline 
 								style={{ 
@@ -2224,8 +2327,8 @@ export default function Meet() {
 									height: '100%',
 									borderRadius: 8, 
 									background: '#000',
-									objectFit: 'cover',
-									display: hasVideo === false ? 'none' : 'block'
+									objectFit: peer.isScreenSharing ? 'contain' : 'cover',
+									display: peer.hasVideo === false ? 'none' : 'block'
 								}} 
 							/>
 						</div>
@@ -2239,12 +2342,12 @@ export default function Meet() {
 							py: 0.5
 						}}>
 							<Typography variant="caption" sx={{ color: '#fff', fontWeight: 500 }}>
-								{peerUsername || 'Participant'}
+								{peer.username || 'Participant'}{peer.isScreenSharing ? ' (Sharing Screen)' : ''}
 							</Typography>
 						</Box>
 						
 						{/* Avatar for peers with video off */}
-						{hasVideo === false && (
+						{peer.hasVideo === false && (
 							<Box sx={{
 								position: 'absolute',
 								top: 0,
@@ -2274,7 +2377,7 @@ export default function Meet() {
 										marginBottom: { xs: 1, sm: 2 }
 									}}
 								>
-									{(peerUsername && peerUsername.charAt(0).toUpperCase()) || 'U'}
+									{(peer.username && peer.username.charAt(0).toUpperCase()) || 'U'}
 								</Avatar>
 								<Typography 
 									variant="h6" 
@@ -2289,7 +2392,7 @@ export default function Meet() {
 										textAlign: 'center'
 									}}
 								>
-									{peerUsername || 'Participant'}
+									{peer.username || 'Participant'}
 								</Typography>
 								<Typography 
 									variant="body2" 
@@ -2348,6 +2451,7 @@ export default function Meet() {
 					onStopScreenShare={handleStopScreenShare}
 					socketRef={socketRef}
 					peerRefs={peersRef}
+					streamRef={streamRef}
 					onError={(message) => showError(message, 'error')}
 					isScreenSharing={isScreenSharing}
 					setIsScreenSharing={setIsScreenSharing}

@@ -26,7 +26,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
  * @param {boolean} props.isScreenSharing - Whether screen is currently being shared
  * @param {Function} props.setIsScreenSharing - Function to set screen sharing state
  */
-function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRefs, onError, isScreenSharing, setIsScreenSharing }) {
+function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRefs, onError, isScreenSharing, setIsScreenSharing, streamRef }) {
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const screenStreamRef = useRef(null);
   
@@ -79,20 +79,51 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
           // Use only ideal for frameRate to be more compatible
           frameRate: { ideal: 24 }
         },
-        audio: true // Simplified audio constraint for better compatibility
+        audio: true // Capture system audio from the screen share if available
       });
       
-      // Store reference to the screen stream
-      screenStreamRef.current = screenStream;
+      // Create a combined stream that includes both the screen share and microphone audio
+      // This ensures that user's voice continues to work during screen sharing
+      let combinedStream = new MediaStream();
+      
+      // First add all screen sharing tracks
+      screenStream.getTracks().forEach(track => {
+        combinedStream.addTrack(track);
+      });
+      
+      // Get the user's microphone audio if it's currently enabled
+      try {
+        if (streamRef && streamRef.current) {
+          // Check if there are enabled audio tracks from the user's microphone
+          const micTracks = streamRef.current.getAudioTracks().filter(track => track.enabled);
+          
+          if (micTracks.length > 0) {
+            console.log('Adding microphone audio to screen share stream');
+            // Clone the microphone tracks to avoid interfering with the original stream
+            micTracks.forEach(track => {
+              combinedStream.addTrack(track.clone());
+            });
+          } else {
+            console.log('No enabled microphone tracks found');
+          }
+        }
+      } catch (err) {
+        console.error('Error adding microphone audio to screen share:', err);
+      }
+      
+      // Store reference to the combined stream
+      screenStreamRef.current = combinedStream;
       
       // Handle user manually stopping the screen share
-      screenStream.getVideoTracks()[0].onended = () => {
-        console.log('User stopped screen sharing via browser controls');
-        stopScreenSharing();
-      };
+      const videoTrack = combinedStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.log('User stopped screen sharing via browser controls');
+          stopScreenSharing();
+        };
+      }
       
       // Apply encoding optimizations for video track to reduce initial latency
-      const videoTrack = screenStream.getVideoTracks()[0];
       if (videoTrack) {
         // Apply content hints to optimize encoding
         videoTrack.contentHint = "detail";
@@ -106,39 +137,109 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
         }
       }
       
-      // Send screen stream to all peers efficiently
+      // Send combined stream (screen+mic) to all peers efficiently
       if (peerRefs && peerRefs.current) {
         // Process all peers in parallel for faster distribution
         const peerUpdatePromises = peerRefs.current.map(async ({ peer, id }) => {
           if (peer && peer.connectionState !== 'closed') {
             try {
-              const videoSender = peer.getSenders().find(s => 
-                s.track && s.track.kind === 'video' && s.track.readyState === 'live'
+              console.log(`Updating peer ${id} with screen sharing tracks`);
+              
+              // Store original senders to restore if needed
+              const originalVideoSenders = peer.getSenders().filter(s => 
+                s.track && s.track.kind === 'video'
               );
               
-              // Prioritize video track handling for faster sharing
+              // Clear any saved information about previous tracks
+              if (!peer._previousTracks) {
+                peer._previousTracks = { video: [], audio: [] };
+              }
+              
+              // Save current video tracks if we haven't already
+              if (originalVideoSenders.length > 0 && peer._previousTracks.video.length === 0) {
+                console.log(`Saving ${originalVideoSenders.length} original video tracks for peer ${id}`);
+                peer._previousTracks.video = originalVideoSenders.map(s => s.track);
+              }
+              
+              // Add a new transceiver for screen video instead of replacing camera video
+              // This ensures screen and camera video can coexist
+              console.log(`Adding screen video track to peer ${id}`);
               if (videoTrack) {
-                if (videoSender) {
-                  // Replace existing track for better performance
-                  console.log(`Replacing video track for peer ${id}`);
-                  await videoSender.replaceTrack(videoTrack);
+                // Check if we already have a screen transceiver
+                const screenSender = peer.getSenders().find(s => 
+                  s.track && s.track.id === videoTrack.id
+                );
+                
+                if (!screenSender) {
+                  // Add a new transceiver specifically for screen sharing
+                  const screenTransceiver = peer.addTransceiver(videoTrack, {
+                    streams: [combinedStream],
+                    direction: 'sendonly'
+                  });
+                  
+                  // Set content hints for better quality
+                  videoTrack.contentHint = "detail";
+                  console.log(`Added screen video track as new transceiver for peer ${id}`);
                 } else {
-                  // Add as new track if no existing track
-                  console.log(`Adding screen video track to peer ${id}`);
-                  peer.addTrack(videoTrack, screenStream);
+                  console.log(`Screen video track already exists for peer ${id}`);
                 }
               }
               
-              // Process audio track after video for better perceived performance
-              const audioTrack = screenStream.getAudioTracks()[0];
-              if (audioTrack) {
-                const audioSender = peer.getSenders().find(s => 
+              // Process audio tracks from screen and mic
+              const screenAudioTracks = combinedStream.getAudioTracks();
+              if (screenAudioTracks.length > 0) {
+                console.log(`Found ${screenAudioTracks.length} audio tracks in screen share stream`);
+                
+                // Get existing audio senders
+                const audioSenders = peer.getSenders().filter(s => 
                   s.track && s.track.kind === 'audio'
                 );
                 
-                if (!audioSender) {
-                  console.log(`Adding screen audio track to peer ${id}`);
-                  peer.addTrack(audioTrack, screenStream);
+                // Save original audio tracks if needed
+                if (audioSenders.length > 0 && peer._previousTracks.audio.length === 0) {
+                  console.log(`Saving ${audioSenders.length} original audio tracks for peer ${id}`);
+                  peer._previousTracks.audio = audioSenders.map(s => s.track);
+                }
+                
+                // Add all screen audio tracks as new transceivers
+                for (const audioTrack of screenAudioTracks) {
+                  const existingSender = peer.getSenders().find(s => 
+                    s.track && s.track.id === audioTrack.id
+                  );
+                  
+                  if (!existingSender) {
+                    console.log(`Adding screen audio track to peer ${id}`);
+                    peer.addTransceiver(audioTrack, {
+                      streams: [combinedStream],
+                      direction: 'sendonly'
+                    });
+                  }
+                }
+              }
+              
+              // Force renegotiation
+              if (!peer._negotiating) {
+                peer._negotiating = true;
+                
+                try {
+                  console.log(`Creating new offer for peer ${id} to negotiate screen tracks`);
+                  const offer = await peer.createOffer();
+                  await peer.setLocalDescription(offer);
+                  
+                  // Send the offer via signaling
+                  if (socketRef && socketRef.current) {
+                    socketRef.current.emit('offer', {
+                      targetId: id,
+                      offer: peer.localDescription,
+                      offererId: socketRef.current.id,
+                      offererUsername: 'Screen Sharing'
+                    });
+                    console.log(`Sent new offer for screen share to peer ${id}`);
+                  }
+                } catch (err) {
+                  console.error(`Error creating offer for screen share: ${err.message}`);
+                } finally {
+                  peer._negotiating = false;
                 }
               }
             } catch (err) {
@@ -155,23 +256,39 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
       
       // Notify about the screen share to help synchronize UI for other users
       if (socketRef && socketRef.current) {
+        // Make sure to use the correct room ID
+        const roomId = socketRef.current.roomId || socketRef.current.meetingId;
+        console.log(`Emitting screen-share-started event for room: ${roomId}`);
         socketRef.current.emit('screen-share-started', {
-          roomId: socketRef.current.roomId,
+          roomId: roomId,
           userId: socketRef.current.id
         });
       }
       
-      // Call the callback with the screen stream
-      onScreenShare?.(screenStream);
+      // Call the callback with the combined stream
+      onScreenShare?.(combinedStream);
+      
+      console.log('Screen sharing started with combined stream:', 
+        `Video tracks: ${combinedStream.getVideoTracks().length}`,
+        `Audio tracks: ${combinedStream.getAudioTracks().length}`
+      );
       
     } catch (err) {
       console.error('Error starting screen sharing:', err);
       
-      // Handle user cancellation
-      if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-        onError?.('Screen sharing was cancelled or permission was denied.');
+      // Handle user cancellation with specific error messages
+      if (err.name === 'NotAllowedError') {
+        onError?.('Screen sharing permission was denied. Please allow access to continue.');
+      } else if (err.name === 'AbortError') {
+        onError?.('Screen sharing was cancelled.');
+      } else if (err.name === 'NotFoundError') {
+        onError?.('No screen sharing source was found. Please make sure you have a display to share.');
+      } else if (err.name === 'NotReadableError') {
+        onError?.('Could not read screen content. This may be due to hardware or operating system restrictions.');
+      } else if (err.name === 'OverconstrainedError') {
+        onError?.('Screen sharing constraints could not be satisfied. Please try again with different options.');
       } else {
-        onError?.(`Failed to start screen sharing: ${err.message}`);
+        onError?.(`Failed to start screen sharing: ${err.message || 'Unknown error'}`);
       }
       
       setIsScreenSharing(false);
@@ -201,34 +318,85 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
         peerRefs.current.forEach(({ peer, id }) => {
           if (peer && peer.connectionState !== 'closed') {
             try {
+              console.log(`Cleaning up screen sharing tracks for peer ${id}`);
               const senders = peer.getSenders();
+              const screenSenders = [];
               
-              // Find and clean up video senders first (most important for UI feedback)
-              const videoSender = senders.find(sender => 
-                sender.track && 
-                sender.track.kind === 'video' && 
-                screenTrackIds.includes(sender.track.id)
-              );
+              // First, find all screen track senders
+              senders.forEach(sender => {
+                if (sender.track && screenTrackIds.includes(sender.track.id)) {
+                  screenSenders.push(sender);
+                }
+              });
               
-              if (videoSender) {
-                // Instead of removing the track (which can be slow),
-                // replace it with a null track or stop it
-                if (videoTrack) {
-                  videoTrack.enabled = false;
-                  console.log(`Disabled screen video track for peer ${id}`);
-                  peer.removeTrack(videoSender);
+              console.log(`Found ${screenSenders.length} screen track senders to remove for peer ${id}`);
+              
+              // Remove all screen senders
+              screenSenders.forEach(sender => {
+                try {
+                  console.log(`Removing ${sender.track?.kind || 'unknown'} track from peer ${id}`);
+                  peer.removeTrack(sender);
+                } catch (err) {
+                  console.error(`Error removing track from peer ${id}:`, err);
+                }
+              });
+              
+              // Restore previous tracks if available
+              if (peer._previousTracks) {
+                // Restore video tracks
+                if (peer._previousTracks.video && peer._previousTracks.video.length > 0) {
+                  console.log(`Restoring ${peer._previousTracks.video.length} original video tracks for peer ${id}`);
+                  
+                  // Check if the original tracks are still valid
+                  const validVideoTracks = peer._previousTracks.video.filter(track => 
+                    track.readyState === 'live' && !screenTrackIds.includes(track.id)
+                  );
+                  
+                  // Add them back if needed
+                  validVideoTracks.forEach(track => {
+                    // Check if this track is already present
+                    const exists = peer.getSenders().some(s => 
+                      s.track && s.track.id === track.id
+                    );
+                    
+                    if (!exists) {
+                      try {
+                        console.log(`Re-adding original video track to peer ${id}`);
+                        peer.addTrack(track);
+                      } catch (err) {
+                        console.error(`Error re-adding video track to peer ${id}:`, err);
+                      }
+                    }
+                  });
                 }
               }
               
-              // Then process other tracks
-              senders.forEach(sender => {
-                if (sender !== videoSender && 
-                    sender.track && 
-                    screenTrackIds.includes(sender.track.id)) {
-                  console.log(`Removing screen track ${sender.track.kind} from peer ${id}`);
-                  peer.removeTrack(sender);
+              // Force renegotiation
+              if (!peer._negotiating) {
+                peer._negotiating = true;
+                try {
+                  console.log(`Creating new offer after removing screen tracks for peer ${id}`);
+                  peer.createOffer()
+                    .then(offer => peer.setLocalDescription(offer))
+                    .then(() => {
+                      if (socketRef && socketRef.current) {
+                        socketRef.current.emit('offer', {
+                          targetId: id,
+                          offer: peer.localDescription,
+                          offererId: socketRef.current.id
+                        });
+                        console.log(`Sent new offer after removing screen tracks to peer ${id}`);
+                      }
+                    })
+                    .catch(err => console.error(`Error creating offer after screen stop: ${err.message}`))
+                    .finally(() => {
+                      peer._negotiating = false;
+                    });
+                } catch (err) {
+                  console.error(`Error during renegotiation for peer ${id}:`, err);
+                  peer._negotiating = false;
                 }
-              });
+              }
             } catch (err) {
               console.error(`Error cleaning up screen share for peer ${id}:`, err);
             }
@@ -247,8 +415,11 @@ function ScreenShareButton({ onScreenShare, onStopScreenShare, socketRef, peerRe
       
       // Emit screen share stopped event to all participants for faster UI updates
       if (socketRef && socketRef.current) {
+        // Make sure to use the correct room ID
+        const roomId = socketRef.current.roomId || socketRef.current.meetingId;
+        console.log(`Emitting screen-share-stopped event for room: ${roomId}`);
         socketRef.current.emit('screen-share-stopped', {
-          roomId: socketRef.current.roomId,
+          roomId: roomId,
           userId: socketRef.current.id
         });
         console.log('Notified peers of screen share stopped');

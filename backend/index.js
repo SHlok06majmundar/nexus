@@ -782,23 +782,62 @@ io.on('connection', (socket) => {
       // Update last activity time
       socket.lastActivity = Date.now();
       
-      if (!socket.meetingId || !activeRooms.has(roomId)) return;
+      // Detailed logging for debugging screen sharing issues
+      console.log(`Screen sharing parameters:
+        - Socket ID: ${socket.id}
+        - Username: ${socket.username}
+        - Provided roomId: ${roomId}
+        - Socket meetingId: ${socket.meetingId}
+        - Provided userId: ${userId || 'not provided'}`
+      );
+      
+      // Use socket.meetingId if roomId is not provided or invalid
+      const effectiveRoomId = (roomId && activeRooms.has(roomId)) ? roomId : socket.meetingId;
+      
+      if (!effectiveRoomId || !activeRooms.has(effectiveRoomId)) {
+        console.warn(`Invalid room ID for screen sharing: ${roomId}. User meetingId: ${socket.meetingId}`);
+        console.warn(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
+        socket.emit('error', { message: 'Invalid room ID for screen sharing' });
+        return;
+      }
+      
+      console.log(`Broadcasting screen share start to room ${effectiveRoomId}`);
+      
+      // Get room participants for logging
+      const roomParticipants = activeRooms.get(effectiveRoomId);
+      console.log(`Room ${effectiveRoomId} has ${roomParticipants.size} participants`);
       
       // Broadcast to all participants in the room
-      socket.to(roomId).emit('user-screen-share', {
+      socket.to(effectiveRoomId).emit('user-screen-share', {
         userId: userId || socket.id,
-        username: socket.username,
+        username: socket.username || "Unknown User",
         isSharing: true
       });
       
+      // Send confirmation back to the sender
+      socket.emit('screen-share-confirmation', {
+        status: 'started',
+        roomId: effectiveRoomId,
+        timestamp: Date.now()
+      });
+      
+      // Log a system message to the room chat
+      io.to(effectiveRoomId).emit('room-message', { 
+        type: 'system', 
+        text: `${socket.username || "Unknown User"} started sharing their screen.`,
+        timestamp: new Date().toISOString(),
+        messageId: `system-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
+      });
+      
       // Update user data if needed
-      const user = activeRooms.get(roomId).get(socket.id);
+      const user = activeRooms.get(effectiveRoomId).get(socket.id);
       if (user) {
         user.isScreenSharing = true;
+        console.log(`Updated user ${socket.id} screen sharing status to true`);
       }
     } catch (error) {
       console.error('Error handling screen share start:', error);
-      socket.emit('error', { message: 'Failed to update screen sharing status' });
+      socket.emit('error', { message: 'Failed to update screen sharing status', details: error.message });
     }
   });
   
@@ -810,23 +849,91 @@ io.on('connection', (socket) => {
       // Update last activity time
       socket.lastActivity = Date.now();
       
-      if (!socket.meetingId || !activeRooms.has(roomId)) return;
+      // Detailed logging for debugging screen sharing issues
+      console.log(`Screen sharing stop parameters:
+        - Socket ID: ${socket.id}
+        - Username: ${socket.username}
+        - Provided roomId: ${roomId}
+        - Socket meetingId: ${socket.meetingId}
+        - Provided userId: ${userId || 'not provided'}`
+      );
+      
+      // Use socket.meetingId if roomId is not provided or invalid
+      const effectiveRoomId = (roomId && activeRooms.has(roomId)) ? roomId : socket.meetingId;
+      
+      if (!effectiveRoomId || !activeRooms.has(effectiveRoomId)) {
+        console.warn(`Invalid room ID for stopping screen sharing: ${roomId}. User meetingId: ${socket.meetingId}`);
+        console.warn(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
+        // Don't return an error - try to be lenient when stopping screen share
+        // Just use the socket's meetingId as a fallback if available
+        if (socket.meetingId && activeRooms.has(socket.meetingId)) {
+          console.log(`Using socket.meetingId ${socket.meetingId} as fallback for screen share stop`);
+          // Update the effectiveRoomId
+          effectiveRoomId = socket.meetingId;
+        } else {
+          // If we can't determine the room, we can't notify peers
+          console.error('Cannot determine effective room ID for stopping screen share');
+          return;
+        }
+      }
+      
+      console.log(`Broadcasting screen share stop to room ${effectiveRoomId}`);
+      
+      // Get room participants for logging
+      const roomParticipants = activeRooms.get(effectiveRoomId);
+      console.log(`Room ${effectiveRoomId} has ${roomParticipants.size} participants`);
       
       // Broadcast to all participants in the room
-      socket.to(roomId).emit('user-screen-share', {
+      socket.to(effectiveRoomId).emit('user-screen-share', {
         userId: userId || socket.id,
-        username: socket.username,
+        username: socket.username || "Unknown User",
         isSharing: false
       });
       
+      // Also broadcast with roomId parameter for clients that expect it
+      socket.to(effectiveRoomId).emit('screen-share-stopped', {
+        userId: userId || socket.id,
+        username: socket.username || "Unknown User",
+        roomId: effectiveRoomId
+      });
+      
+      // Send confirmation back to the sender
+      socket.emit('screen-share-confirmation', {
+        status: 'stopped',
+        roomId: effectiveRoomId,
+        timestamp: Date.now()
+      });
+      
+      // Log a system message to the room chat
+      io.to(effectiveRoomId).emit('room-message', { 
+        type: 'system', 
+        text: `${socket.username || "Unknown User"} stopped sharing their screen.`,
+        timestamp: new Date().toISOString(),
+        messageId: `system-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`
+      });
+      
       // Update user data if needed
-      const user = activeRooms.get(roomId).get(socket.id);
+      const user = activeRooms.get(effectiveRoomId).get(socket.id);
       if (user) {
         user.isScreenSharing = false;
+        console.log(`Updated user ${socket.id} screen sharing status to false`);
       }
     } catch (error) {
       console.error('Error handling screen share stop:', error);
-      socket.emit('error', { message: 'Failed to update screen sharing status' });
+      socket.emit('error', { message: 'Failed to update screen sharing status', details: error.message });
+      
+      // Try to clean up user's screen sharing state even if an error occurred
+      try {
+        if (socket.meetingId && activeRooms.has(socket.meetingId)) {
+          const user = activeRooms.get(socket.meetingId).get(socket.id);
+          if (user) {
+            user.isScreenSharing = false;
+            console.log(`Force-reset screen sharing status to false for user ${socket.id} after error`);
+          }
+        }
+      } catch (cleanupError) {
+        console.error('Error during screen share status cleanup:', cleanupError);
+      }
     }
   });
   

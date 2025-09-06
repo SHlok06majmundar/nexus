@@ -52,3 +52,36 @@
   50% { opacity: 0.5; }
   100% { opacity: 1; }
 }
+
+/* Screen sharing styles */
+.peer-video-container.screen-sharing {
+  order: -1; /* Make screen sharing video appear first */
+  flex-basis: 100% !important; /* Make it full width */
+  max-width: 100% !important;
+  margin-bottom: 16px;
+  border: 2px solid var(--color-success, #4caf50);
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5) !important;
+  transition: all 0.3s ease-in-out;
+  position: relative;
+}
+
+.peer-video-container.screen-sharing video {
+  object-fit: contain !important;
+  background-color: #000 !important;
+}
+
+/* Screen sharing indicator */
+.peer-video-container.screen-sharing::after {
+  content: "Screen sharing";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(76, 175, 80, 0.9);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
