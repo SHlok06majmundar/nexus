@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
+import './clerk-styles.css'; // Import custom styles for Clerk
 import App from './App.jsx';
 import Dashboard from './Dashboard.jsx';
 import Meet from './Meet.jsx';
@@ -13,7 +14,31 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPubKey}>
+    <ClerkProvider 
+      publishableKey={clerkPubKey}
+      appearance={{
+        layout: {
+          socialButtonsVariant: 'iconButton',
+          showOptionalFields: false,
+          logoPlacement: 'none',
+        },
+        variables: {
+          colorPrimary: '#6a11cb',
+          colorTextOnPrimaryBackground: 'white',
+          colorBackground: 'white',
+          fontFamily: 'Inter, sans-serif',
+          borderRadius: '8px',
+        },
+        elements: {
+          card: 'cl-card',
+          formButtonPrimary: 'cl-formButtonPrimary',
+          headerTitle: 'cl-headerTitle',
+          headerSubtitle: 'cl-headerSubtitle',
+          footerActionLink: 'cl-footerActionLink',
+          formFieldInput: 'cl-formFieldInput',
+        }
+      }}
+    >
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<ErrorBoundary><Landing /></ErrorBoundary>} />
