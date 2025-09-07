@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import { useTheme } from '@mui/material/styles';
 import { 
   useMediaQuery, Box, Avatar, Typography, Paper, Button, 
@@ -21,7 +21,8 @@ import HistoryIcon from '@mui/icons-material/History';
 
 
 export default function Dashboard() {
-  const { user, signOut } = useUser();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isSmall = useMediaQuery(theme.breakpoints.down('sm'));
@@ -221,7 +222,20 @@ export default function Dashboard() {
           </Typography>
           <Tooltip title="Sign out">
             <IconButton 
-              onClick={() => signOut()}
+              onClick={() => {
+                // Using the Clerk signOut method properly
+                signOut().then(() => {
+                  // Redirect to the home page after successful sign out
+                  navigate('/');
+                }).catch(error => {
+                  console.error('Error signing out:', error);
+                  setSnackbar({
+                    open: true,
+                    message: 'Failed to sign out. Please try again.',
+                    severity: 'error'
+                  });
+                });
+              }}
               sx={{ 
                 color: 'var(--text-muted)',
                 '&:hover': { color: 'var(--color-primary)' }
