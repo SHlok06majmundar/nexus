@@ -10,11 +10,18 @@
 .auth-card .cl-card {
   border-radius: 12px !important;
   box-shadow: none !important;
-}
-
-.auth-card .cl-rootBox {
   width: 100% !important;
   max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.auth-card .cl-rootBox,
+.auth-card .cl-component,
+.auth-card .cl-main {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: auto !important;
+  overflow: visible !important;
 }
 
 /* Form fields */
@@ -75,17 +82,25 @@
 /* Mobile optimizations */
 @media (max-width: 600px) {
   .auth-card .cl-card {
-    padding: 1rem !important;
+    padding: 0.75rem !important;
+    width: 100% !important;
+  }
+  
+  .auth-card .cl-internal-b3fm6y {
+    width: 100% !important; /* Fix width on mobile */
+    min-width: auto !important;
   }
   
   .auth-card .cl-formButtonPrimary {
     font-size: 0.9rem !important;
     padding: 0.6rem 1.2rem !important;
+    width: 100% !important;
   }
   
   .auth-card .cl-formFieldInput {
     font-size: 0.9rem !important;
     padding: 0.6rem 0.9rem !important;
+    width: 100% !important;
   }
   
   .auth-card .cl-formFieldLabel {
@@ -99,5 +114,35 @@
   
   .auth-card .cl-dividerText {
     font-size: 0.75rem !important;
+  }
+  
+  /* Fix scrolling issues */
+  .auth-card .cl-formField {
+    width: 100% !important;
+  }
+  
+  /* Make sure social buttons are properly sized */
+  .auth-card .cl-socialButtonsIconButton {
+    margin: 0 0.25rem !important;
+  }
+  
+  /* Fix email input scaling */
+  .auth-card .cl-identityPreview {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}
+
+/* Extra small devices */
+@media (max-width: 380px) {
+  .auth-card .cl-card {
+    padding: 0.5rem !important;
+  }
+  
+  .auth-card .cl-socialButtons {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 0.5rem !important;
   }
 }

@@ -377,12 +377,14 @@ export default function Landing() {
         flexDirection: { xs: 'column', md: 'row' },
         alignItems: 'center',
         justifyContent: 'center',
-        p: { xs: 2, sm: 3, md: 4, lg: 6 },
-        pt: { xs: 3, sm: 4, md: 5, lg: 6 },
-        pb: { xs: 4, sm: 5, md: 6, lg: 8 },
-        gap: { xs: 4, sm: 5, md: 6, lg: 8 },
-        maxWidth: '100vw',
+        p: { xs: 2, sm: 2, md: 4, lg: 6 },
+        pt: { xs: 2, sm: 3, md: 5, lg: 6 },
+        pb: { xs: 3, sm: 4, md: 6, lg: 8 },
+        px: { xs: 2, sm: 3, md: 4, lg: 6 }, /* Add padding on all screen sizes */
+        gap: { xs: 3, sm: 4, md: 6, lg: 8 },
+        maxWidth: '100%',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       }}>
       {/* Left: Hero & Features */}
       <Box sx={{
@@ -594,26 +596,36 @@ export default function Landing() {
       </Box>
       {/* Right: Auth Card */}
       <Box sx={{
-        flex: 1,
-        maxWidth: { xs: '100%', sm: '450px', md: '480px' },
+        flex: { xs: '1 1 auto', md: 1 },
+        maxWidth: { xs: '360px', sm: '380px', md: '420px' }, /* Limit width on mobile */
         mx: 'auto',
         width: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        px: { xs: 0, sm: 2, md: 0 }, /* No extra padding needed on mobile */
+        boxSizing: 'border-box',
+        overflow: 'hidden',
       }}>
         <Card 
             elevation={0} 
             sx={{ 
               width: '100%', 
-              borderRadius: { xs: 3, sm: 4 }, 
-              p: { xs: 2, sm: 3, md: 4 }, 
+              maxWidth: { xs: '100%', sm: '400px', md: '450px' },
+              minHeight: { xs: 'auto', sm: '450px' },
+              borderRadius: { xs: 2, sm: 3, md: 4 }, 
+              p: { xs: 2, sm: 2.5, md: 3 }, 
+              pt: { xs: 2, sm: 2.5, md: 3 },
+              pb: { xs: 2, sm: 2.5, md: 3 },
+              px: { xs: 2, sm: 2.5, md: 3 }, 
+              mx: 'auto',
               bgcolor: 'background.paper',
               boxShadow: '0 10px 40px rgba(60,80,180,0.15), 0 1px 3px rgba(60,80,180,0.1)',
               border: '1px solid rgba(255,255,255,0.8)',
               backdropFilter: 'blur(8px)',
               position: 'relative',
-              overflow: 'hidden',
+              overflow: 'hidden', /* Important: contain elements within boundaries */
+              boxSizing: 'border-box',
               transform: { xs: 'scale(1)', md: 'scale(1)' },
               transition: 'transform 0.3s ease',
               '&:hover': {
@@ -647,14 +659,24 @@ export default function Landing() {
               }} 
             />
             
-            <CardContent sx={{ position: 'relative', zIndex: 1, p: { xs: 2, sm: 3 } }}>
+            <CardContent sx={{ 
+              position: 'relative', 
+              zIndex: 1, 
+              p: { xs: 1, sm: 1.5 },
+              pt: { xs: 1, sm: 1.5 },
+              pb: { xs: 1, sm: 1.5 },
+              overflow: 'hidden', /* Important: keep content within boundaries */
+              boxSizing: 'border-box',
+              width: '100%',
+              maxWidth: '100%',
+            }}>
             <SignedOut>
               <Typography 
                 variant="h3" 
                 fontWeight={800} 
                 sx={{ 
                   mb: { xs: 0.5, sm: 1 },
-                  fontSize: { xs: '1.75rem', sm: '2rem', md: '2.5rem' },
+                  fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.25rem' },
                   background: 'linear-gradient(90deg, #6a11cb 0%, #2575fc 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
@@ -669,8 +691,8 @@ export default function Landing() {
                 variant="body1" 
                 color="text.secondary" 
                 sx={{ 
-                  mb: { xs: 3, sm: 4 },
-                  fontSize: { xs: '0.9rem', sm: '1rem' },
+                  mb: { xs: 2, sm: 3 },
+                  fontSize: { xs: '0.85rem', sm: '0.9rem', md: '1rem' },
                   textAlign: { xs: 'center', sm: 'left' },
                   maxWidth: { xs: '100%', sm: '90%' }
                 }}
@@ -681,38 +703,76 @@ export default function Landing() {
               <Paper 
                 elevation={0} 
                 sx={{ 
-                  p: { xs: 2, sm: 3 }, 
+                  p: { xs: 1, sm: 1.5, md: 2 }, 
                   borderRadius: { xs: 2, sm: 3 }, 
                   bgcolor: 'rgba(255,255,255,0.8)',
                   border: '1px solid rgba(0,0,0,0.05)',
                   mb: { xs: 2, sm: 3 },
                   boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden', /* Keep content contained */
+                  mx: 'auto', 
+                  position: 'relative',
                   '& .cl-rootBox': {
-                    width: '100%',
-                    maxWidth: '100%'
+                    width: '100% !important',
+                    maxWidth: '100% !important',
+                    minWidth: 'auto !important',
+                    overflow: 'hidden !important', /* Important change */
+                    padding: '0 !important',
+                    margin: '0 !important',
+                    boxSizing: 'border-box !important'
                   },
                   '& .cl-card': {
                     borderRadius: { xs: '8px', sm: '12px' },
-                    boxShadow: 'none'
+                    boxShadow: 'none',
+                    width: '100% !important',
+                    maxWidth: '100% !important',
+                    overflow: 'hidden !important', /* Keep content inside boundaries */
+                    padding: { xs: '0.5rem !important', sm: '0.75rem !important' },
+                    margin: '0 !important',
+                    boxSizing: 'border-box !important'
                   },
                   '& .cl-formButtonPrimary': {
                     background: 'linear-gradient(90deg, #6a11cb 0%, #2575fc 100%)',
                     borderRadius: '8px',
                     textTransform: 'none',
                     fontWeight: 600,
-                    fontSize: { xs: '0.9rem', sm: '1rem' }
+                    fontSize: { xs: '0.9rem', sm: '1rem' },
+                    width: '100% !important',
+                    boxSizing: 'border-box !important'
                   },
                   '& .cl-formFieldInput': {
-                    borderRadius: '8px'
+                    borderRadius: '8px',
+                    width: '100% !important',
+                    boxSizing: 'border-box !important',
+                    paddingRight: '28px !important' /* Important: make space for show/hide password icon */
                   },
                   '& .cl-identityPreviewText': {
-                    fontSize: { xs: '0.9rem', sm: '1rem' }
+                    fontSize: { xs: '0.9rem', sm: '1rem' },
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
                   },
                   '& .cl-footerActionLink': {
                     color: '#6a11cb'
                   },
                   '& .cl-socialButtonsIconButton': {
-                    borderRadius: '8px'
+                    borderRadius: '8px',
+                    margin: '2px !important'
+                  },
+                  '& .cl-internal-wkkub3': {
+                    width: '100% !important',
+                    boxSizing: 'border-box !important'
+                  },
+                  '& .cl-formFieldInputShowPasswordButton': {
+                    right: '8px !important'
+                  },
+                  '& .cl-formFieldInputGroup': {
+                    position: 'relative',
+                    width: '100% !important',
+                    boxSizing: 'border-box !important'
                   }
                 }}
               >

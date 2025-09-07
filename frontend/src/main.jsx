@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import './components/clerk-styles.css'; // Import custom styles for Clerk
+import './components/clerk-fixes.css'; // Import fixes for Clerk components
+import './components/clerk-professional.css'; // Import professional styling for Clerk components
 import App from './App.jsx';
 import Dashboard from './Dashboard.jsx';
 import Meet from './Meet.jsx';
