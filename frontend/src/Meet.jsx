@@ -68,6 +68,18 @@ export default function Meet() {
 	const [input, setInput] = useState('');
 	const [typingUsers, setTypingUsers] = useState([]);
 	const [isTyping, setIsTyping] = useState(false);
+	const [unreadMessages, setUnreadMessages] = useState(0);
+	const [lastMessageNotification, setLastMessageNotification] = useState(null);
+	
+	// Auto-dismiss chat notification after 5 seconds
+	useEffect(() => {
+		if (lastMessageNotification) {
+			const timer = setTimeout(() => {
+				setLastMessageNotification(null);
+			}, 5000);
+			return () => clearTimeout(timer);
+		}
+	}, [lastMessageNotification]);
 	
 	// Media state
 	const [micOn, setMicOn] = useState(true);
@@ -528,6 +540,27 @@ export default function Meet() {
 				
 				// Add the message
 				const updatedMessages = [...prev, msg];
+				
+				// If the message is from another user and chat is closed, increment unread count
+				// and show notification
+				if (msg.id !== socketRef.current.id && !chatOpen) {
+					setUnreadMessages(prev => prev + 1);
+					
+					// Store last message for notification
+					setLastMessageNotification({
+						user: msg.user,
+						text: msg.text,
+						timestamp: new Date().getTime()
+					});
+					
+					// Play notification sound if available
+					try {
+						const notificationSound = new Audio('data:audio/mp3;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV');
+						notificationSound.play().catch(err => console.error("Error playing notification sound:", err));
+					} catch (err) {
+						console.error("Error with notification sound:", err);
+					}
+				}
 				
 				// Send read receipt after short delay to ensure UI has updated
 				setTimeout(() => {
@@ -2582,15 +2615,44 @@ export default function Meet() {
 					<CallEndIcon />
 				</IconButton>
 				<IconButton 
-					onClick={() => setChatOpen(!chatOpen)} 
+					onClick={() => {
+						setChatOpen(!chatOpen);
+						if (!chatOpen) {
+							// Reset unread count when opening chat
+							setUnreadMessages(0);
+							setLastMessageNotification(null);
+						}
+					}} 
 					sx={{ 
-						bgcolor: chatOpen ? 'rgba(106, 27, 154, 0.1)' : 'rgba(0, 0, 0, 0.05)', 
-						color: chatOpen ? 'var(--color-primary)' : 'var(--text-secondary)', 
+						bgcolor: chatOpen ? 'rgba(106, 27, 154, 0.1)' : (unreadMessages > 0 ? 'rgba(233, 30, 99, 0.1)' : 'rgba(0, 0, 0, 0.05)'), 
+						color: chatOpen ? 'var(--color-primary)' : (unreadMessages > 0 ? 'var(--color-error)' : 'var(--text-secondary)'), 
 						borderRadius: 'var(--button-radius)',
-						p: { xs: 1, sm: 1.5 }
+						p: { xs: 1, sm: 1.5 },
+						position: 'relative'
 					}}
 				>
 					<ChatIcon />
+					{unreadMessages > 0 && (
+						<Box 
+							sx={{
+								position: 'absolute',
+								top: -4,
+								right: -4,
+								bgcolor: 'var(--color-error, #f44336)',
+								color: 'white',
+								borderRadius: '50%',
+								width: 18,
+								height: 18,
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'center',
+								fontSize: 11,
+								fontWeight: 'bold'
+							}}
+						>
+							{unreadMessages > 9 ? '9+' : unreadMessages}
+						</Box>
+					)}
 				</IconButton>
 				
 				{/* Recording Button */}
@@ -2982,6 +3044,80 @@ export default function Meet() {
 					</Box>
 				</Box>
 			)}
+			
+			{/* Chat Message Notification */}
+			{lastMessageNotification && !chatOpen && (
+				<Paper
+					elevation={3}
+					sx={{
+						position: 'fixed',
+						bottom: 80,
+						right: 20,
+						padding: 2,
+						borderRadius: 'var(--card-radius)',
+						backgroundColor: 'rgba(255, 255, 255, 0.95)',
+						backdropFilter: 'blur(10px)',
+						boxShadow: 'var(--shadow-strong)',
+						zIndex: 100,
+						maxWidth: 300,
+						animation: 'fadeIn 0.3s ease-in-out',
+						display: 'flex',
+						flexDirection: 'column',
+						transition: 'all 0.3s ease',
+						'@keyframes fadeIn': {
+							'0%': {
+								opacity: 0,
+								transform: 'translateY(20px)'
+							},
+							'100%': {
+								opacity: 1,
+								transform: 'translateY(0)'
+							}
+						}
+					}}
+				>
+					<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+						<Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>
+							New Message from {lastMessageNotification.user}
+						</Typography>
+						<IconButton 
+							size="small" 
+							onClick={() => setLastMessageNotification(null)}
+							sx={{ padding: 0.5 }}
+						>
+							<Box component="span" sx={{ fontSize: 18, fontWeight: 'bold', color: 'var(--text-muted)' }}>×</Box>
+						</IconButton>
+					</Box>
+					<Typography variant="body2" sx={{ color: 'var(--text-primary)' }}>
+						{lastMessageNotification.text.length > 100 
+							? lastMessageNotification.text.substring(0, 100) + '...' 
+							: lastMessageNotification.text
+						}
+					</Typography>
+					<Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+						<Button 
+							size="small" 
+							onClick={() => {
+								setChatOpen(true);
+								setUnreadMessages(0);
+								setLastMessageNotification(null);
+							}}
+							variant="text"
+							sx={{ 
+								textTransform: 'none', 
+								color: 'var(--color-primary)',
+								'&:hover': {
+									backgroundColor: 'rgba(106, 17, 203, 0.05)'
+								}
+							}}
+						>
+							Open Chat
+						</Button>
+					</Box>
+				</Paper>
+			)}
+			
+
 		</Box>
 	);
 }
