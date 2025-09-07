@@ -40,5 +40,10 @@ export default defineConfig({
     strictPort: true,
     host: true,
     cors: true
+  },
+  // Add history API fallback for development server
+  server: {
+    ...defineConfig({}).server,
+    historyApiFallback: true
   }
 });
