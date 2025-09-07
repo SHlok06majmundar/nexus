@@ -61,6 +61,9 @@ createRoot(document.getElementById('root')).render(
           <Route path="/" element={<ErrorBoundary><Landing /></ErrorBoundary>} />
           <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
           <Route path="/meet/:meetingId" element={<ErrorBoundary><Meet /></ErrorBoundary>} />
+          <Route path="/meeting/:meetingId" element={<ErrorBoundary><Meet /></ErrorBoundary>} />
+          <Route path="/join/:meetingId" element={<ErrorBoundary><Meet /></ErrorBoundary>} />
+          <Route path="*" element={<ErrorBoundary><Landing /></ErrorBoundary>} />
         </Routes>
       </BrowserRouter>
     </ClerkProvider>

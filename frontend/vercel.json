@@ -1,0 +1,15 @@
+{
+  "rewrites": [
+    { "source": "/meeting/:id", "destination": "/api/share" },
+    { "source": "/share/:id", "destination": "/api/share" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "routes": [
+    { "src": "/meet/([^/]+)", "dest": "/index.html" },
+    { "src": "/meeting/([^/]+)", "dest": "/index.html" },
+    { "src": "/join/([^/]+)", "dest": "/index.html" }
+  ],
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist"
+}
