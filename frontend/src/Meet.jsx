@@ -17,7 +17,7 @@ import ScreenShareButton from './components/ScreenShareButton';
 const SIGNAL_SERVER = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function Meet() {
-	// CSS for typing animation
+	// CSS for typing animation and video elements
 	const typingAnimationStyles = `
 		.typing-animation {
 			display: flex;
@@ -55,6 +55,14 @@ export default function Meet() {
 				transform: scale(1.2); 
 				opacity: 1; 
 			}
+		}
+		
+		/* Video mirroring styles */
+		video.local-video-stream {
+			transform: scaleX(-1) !important;
+			-webkit-transform: scaleX(-1) !important;
+			-moz-transform: scaleX(-1) !important;
+			-ms-transform: scaleX(-1) !important;
 		}
 	`;
 
@@ -1163,6 +1171,10 @@ export default function Meet() {
 			// Set display style based on video state
 			localVideoRef.current.style.display = videoOn ? 'block' : 'none';
 			
+			// Ensure video is properly mirrored (this is the expected behavior for self-view)
+			localVideoRef.current.style.transform = 'scaleX(-1)';
+			localVideoRef.current.classList.add('local-video-stream');
+			
 			localVideoRef.current.onloadedmetadata = () => {
 				localVideoRef.current.play().catch((err) => {
 					console.error('Video play error:', err);
@@ -1890,6 +1902,10 @@ export default function Meet() {
 						localVideoRef.current.srcObject = streamRef.current;
 						localVideoRef.current.style.display = 'block'; // Ensure video is visible
 						
+						// Ensure video is properly mirrored (this is the expected behavior for self-view)
+						localVideoRef.current.style.transform = 'scaleX(-1)';
+						localVideoRef.current.classList.add('local-video-stream');
+						
 						// Try to play the video
 						localVideoRef.current.play()
 							.catch(err => console.error('Error playing local video:', err));
@@ -2340,6 +2356,7 @@ export default function Meet() {
 						paddingBottom: '56.25%' // 16:9 aspect ratio
 					}}>
 						<video 
+							className="local-video-stream"
 							ref={localVideoRef} 
 							autoPlay 
 							playsInline 
@@ -2353,6 +2370,7 @@ export default function Meet() {
 								borderRadius: 8, 
 								background: '#000',
 								objectFit: 'cover',
+								transform: 'scaleX(-1)', /* Mirror effect - how users typically expect to see themselves */
 								display: videoOn ? 'block' : 'none' // Hide video element when video is off
 							}} 
 						/>
