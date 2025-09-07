@@ -1,5 +1,5 @@
 /* Import modern fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --font-primary: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
@@ -19,6 +19,10 @@
   --gradient-secondary: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
   --gradient-card: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(250,250,255,0.97));
   
+  /* Button gradients */
+  --gradient-button: linear-gradient(90deg, #6a11cb, #2575fc);
+  --gradient-button-hover: linear-gradient(90deg, #5910a6, #2169e8);
+  
   /* Text colors - Light theme */
   --text-primary: #333333;
   --text-secondary: #555555;
@@ -27,9 +31,39 @@
   --text-light: #ffffff;
   
   /* Card styling */
-  --card-radius: 16px;
-  --button-radius: 12px;
-  --input-radius: 12px;
+  --card-radius-xs: 12px; /* Extra small screens */
+  --card-radius-sm: 14px; /* Small screens */
+  --card-radius: 16px;    /* Default */
+  --card-radius-lg: 18px; /* Large screens */
+  
+  --button-radius-xs: 10px; /* Extra small screens */
+  --button-radius-sm: 11px; /* Small screens */
+  --button-radius: 12px;    /* Default */
+  --button-radius-lg: 14px; /* Large screens */
+  
+  --input-radius-xs: 10px;  /* Extra small screens */
+  --input-radius-sm: 11px;  /* Small screens */
+  --input-radius: 12px;     /* Default */
+  --input-radius-lg: 14px;  /* Large screens */
+  
+  /* Spacing units for consistent padding/margin */
+  --space-xs: 0.25rem;  /* 4px */
+  --space-sm: 0.5rem;   /* 8px */
+  --space-md: 1rem;     /* 16px */
+  --space-lg: 1.5rem;   /* 24px */
+  --space-xl: 2rem;     /* 32px */
+  --space-2xl: 3rem;    /* 48px */
+  
+  /* Font sizes */
+  --fs-xs: 0.75rem;     /* 12px */
+  --fs-sm: 0.875rem;    /* 14px */
+  --fs-md: 1rem;        /* 16px - base */
+  --fs-lg: 1.125rem;    /* 18px */
+  --fs-xl: 1.25rem;     /* 20px */
+  --fs-2xl: 1.5rem;     /* 24px */
+  --fs-3xl: 1.875rem;   /* 30px */
+  --fs-4xl: 2.25rem;    /* 36px */
+  --fs-5xl: 3rem;       /* 48px */
   
   /* Animation speeds */
   --transition-fast: 0.2s;
@@ -37,10 +71,22 @@
   --transition-slow: 0.5s;
   
   /* Shadows - Light theme */
+  --shadow-xs: 0 2px 6px rgba(60, 80, 180, 0.05);
+  --shadow-sm: 0 4px 16px rgba(60, 80, 180, 0.06);
+  --shadow-md: 0 8px 24px rgba(60, 80, 180, 0.08);
   --shadow-soft: 0 8px 32px rgba(60, 80, 180, 0.08);
   --shadow-strong: 0 10px 40px rgba(60, 80, 180, 0.12);
   --shadow-inner: inset 0 0 10px rgba(60, 80, 180, 0.05);
   --shadow-glow: 0 0 20px rgba(106, 17, 203, 0.15);
+  
+  /* Z-index scales */
+  --z-below: -1;
+  --z-normal: 1;
+  --z-above: 10;
+  --z-header: 100;
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-tooltip: 1200;
   
   /* Global settings */
   font-synthesis: none;
@@ -65,16 +111,51 @@ html {
   font-size: 16px;
 }
 
+/* Responsive breakpoints */
+:root {
+  --breakpoint-xs: 320px;  /* Extra small devices */
+  --breakpoint-sm: 480px;  /* Small devices */
+  --breakpoint-md: 768px;  /* Medium devices */
+  --breakpoint-lg: 1024px; /* Large devices */
+  --breakpoint-xl: 1280px; /* Extra large devices */
+}
+
 /* Responsive font sizing */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   html {
     font-size: 15px;
+  }
+  
+  :root {
+    --card-radius: var(--card-radius-sm);
+    --button-radius: var(--button-radius-sm);
+    --input-radius: var(--input-radius-sm);
+  }
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 14.5px;
   }
 }
 
 @media (max-width: 480px) {
   html {
     font-size: 14px;
+  }
+  
+  :root {
+    --card-radius: var(--card-radius-xs);
+    --button-radius: var(--button-radius-xs);
+    --input-radius: var(--input-radius-xs);
+    --space-xl: 1.5rem; /* Reduce larger spaces on mobile */
+    --space-2xl: 2rem;
+  }
+}
+
+@media (max-width: 320px) {
+  html {
+    font-size: 13.5px;
   }
 }
 
@@ -234,14 +315,16 @@ video {
 
 /* Mobile-specific styles */
 @media (max-width: 600px) {
-  :root {
-    --card-radius: 12px;
-    --button-radius: 10px;
-    --input-radius: 10px;
-  }
-  
   h1 {
     font-size: clamp(1.8rem, 5vw, 2.5rem);
+  }
+  
+  h2 {
+    font-size: clamp(1.5rem, 4vw, 2rem);
+  }
+  
+  h3 {
+    font-size: clamp(1.25rem, 3.5vw, 1.75rem);
   }
   
   .video-container {
@@ -251,6 +334,57 @@ video {
   
   .chat-sidebar {
     width: 100% !important;
+  }
+  
+  /* Improved spacing on mobile */
+  .MuiContainer-root {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  
+  /* Ensure buttons are easier to tap on mobile */
+  .MuiButton-root {
+    min-height: 44px;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  
+  /* Make icons more visible on mobile */
+  .MuiSvgIcon-root {
+    font-size: 1.25rem !important;
+  }
+  
+  /* Better mobile form fields */
+  .MuiTextField-root {
+    width: 100% !important;
+  }
+  
+  /* Adjust mobile menu spacing */
+  .MuiMenuItem-root {
+    min-height: 44px !important;
+  }
+  
+  /* Improve touch scrolling on mobile */
+  body {
+    overflow-y: auto;
+  }
+}
+
+/* Extra small devices */
+@media (max-width: 320px) {
+  .MuiContainer-root {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  
+  /* Extra small adjustments */
+  h1 {
+    font-size: clamp(1.5rem, 4.5vw, 2rem);
+  }
+  
+  /* Ensure elements have sufficient spacing */
+  .MuiBox-root {
+    gap: 8px !important;
   }
 }
 

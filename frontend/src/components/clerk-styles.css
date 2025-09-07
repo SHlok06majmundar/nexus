@@ -1,0 +1,103 @@
+/* Custom styles for Clerk components */
+:root {
+  --clerk-primary: #6a11cb;
+  --clerk-primary-hover: #5910a6;
+  --clerk-secondary: #2575fc;
+  --clerk-button-radius: 8px;
+}
+
+/* Card and container styles */
+.auth-card .cl-card {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.auth-card .cl-rootBox {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Form fields */
+.auth-card .cl-formFieldInput {
+  border-radius: var(--clerk-button-radius) !important;
+  font-size: 0.95rem !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.auth-card .cl-formFieldLabel {
+  font-size: 0.9rem !important;
+}
+
+/* Buttons */
+.auth-card .cl-formButtonPrimary {
+  background: linear-gradient(90deg, var(--clerk-primary), var(--clerk-secondary)) !important;
+  border-radius: var(--clerk-button-radius) !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(106, 17, 203, 0.15) !important;
+  transition: all 0.2s ease !important;
+  padding: 0.75rem 1.5rem !important;
+}
+
+.auth-card .cl-formButtonPrimary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 16px rgba(106, 17, 203, 0.25) !important;
+}
+
+/* Links */
+.auth-card .cl-footerActionLink {
+  color: var(--clerk-primary) !important;
+  font-weight: 500 !important;
+}
+
+.auth-card .cl-footerActionLink:hover {
+  color: var(--clerk-primary-hover) !important;
+  text-decoration: underline !important;
+}
+
+/* Social buttons */
+.auth-card .cl-socialButtonsIconButton {
+  border-radius: var(--clerk-button-radius) !important;
+  transition: all 0.2s ease !important;
+}
+
+.auth-card .cl-socialButtonsIconButton:hover {
+  transform: translateY(-2px) !important;
+}
+
+/* User button */
+.cl-userButtonTrigger {
+  border-radius: 50% !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  border: 2px solid #fff !important;
+}
+
+/* Mobile optimizations */
+@media (max-width: 600px) {
+  .auth-card .cl-card {
+    padding: 1rem !important;
+  }
+  
+  .auth-card .cl-formButtonPrimary {
+    font-size: 0.9rem !important;
+    padding: 0.6rem 1.2rem !important;
+  }
+  
+  .auth-card .cl-formFieldInput {
+    font-size: 0.9rem !important;
+    padding: 0.6rem 0.9rem !important;
+  }
+  
+  .auth-card .cl-formFieldLabel {
+    font-size: 0.8rem !important;
+  }
+  
+  .auth-card .cl-footerActionText,
+  .auth-card .cl-footerActionLink {
+    font-size: 0.8rem !important;
+  }
+  
+  .auth-card .cl-dividerText {
+    font-size: 0.75rem !important;
+  }
+}
