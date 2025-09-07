@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [recentMeetings, setRecentMeetings] = useState([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const navigate = useNavigate();
 
   // Load preferences from localStorage
@@ -97,6 +98,9 @@ export default function Dashboard() {
 
   // Join or create a meeting
   const handleJoinMeeting = async () => {
+    // Set joining state to true to show loading indicator
+    setIsJoining(true);
+    
     let id = meetingId;
     let usedFallback = false;
     if (!id) {
@@ -115,16 +119,30 @@ export default function Dashboard() {
         usedFallback = true;
       }
     }
-    // Store meeting info including mic and video preferences
-    sessionStorage.setItem('nexus_meeting_info', JSON.stringify({ 
-      meetingId: id, 
-      username: displayName,
-      micEnabled: micOn,
-      videoEnabled: videoOn
-    }));
-    navigate(`/meet/${id}`);
-    if (usedFallback) {
-      setSnackbar({ open: true, message: 'Warning: Server unavailable, using local meeting ID.', severity: 'warning' });
+    
+    try {
+      // Store meeting info including mic and video preferences
+      sessionStorage.setItem('nexus_meeting_info', JSON.stringify({ 
+        meetingId: id, 
+        username: displayName,
+        micEnabled: micOn,
+        videoEnabled: videoOn
+      }));
+      
+      // Add a small delay to show the loading indicator (at least 500ms)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Navigate to the meeting page
+      navigate(`/meet/${id}`);
+      
+      if (usedFallback) {
+        setSnackbar({ open: true, message: 'Warning: Server unavailable, using local meeting ID.', severity: 'warning' });
+      }
+    } catch (error) {
+      console.error('Error joining meeting:', error);
+      setSnackbar({ open: true, message: 'Error joining meeting. Please try again.', severity: 'error' });
+      // Reset joining state if there was an error
+      setIsJoining(false);
     }
   };
   
@@ -439,7 +457,7 @@ export default function Dashboard() {
                 fullWidth
                 size="large"
                 variant="contained"
-                disabled={isGenerating}
+                disabled={isGenerating || isJoining}
                 onClick={handleJoinMeeting}
                 sx={{
                   py: 2,
@@ -452,15 +470,66 @@ export default function Dashboard() {
                   '&:hover': {
                     boxShadow: 'var(--shadow-strong)'
                   },
-                  animation: isGenerating ? 'none' : 'pulse 2s infinite'
+                  animation: (isGenerating || isJoining) ? 'none' : 'pulse 2s infinite',
+                  position: 'relative',
+                  overflow: 'hidden'
                 }}
               >
-                {isGenerating ? (
-                  <CircularProgress size={24} color="inherit" />
+                {isGenerating || isJoining ? (
+                  <>
+                    <CircularProgress 
+                      size={24} 
+                      color="inherit" 
+                      sx={{ 
+                        marginRight: '10px',
+                        animation: 'spin 1.5s linear infinite',
+                        '@keyframes spin': {
+                          '0%': {
+                            transform: 'rotate(0deg)',
+                          },
+                          '100%': {
+                            transform: 'rotate(360deg)',
+                          },
+                        }
+                      }} 
+                    />
+                    {isJoining ? 'Joining Meeting...' : 'Generating...'}
+                  </>
                 ) : meetingId ? (
                   'Join Meeting'
                 ) : (
                   'Start New Meeting'
+                )}
+                
+                {isJoining && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      height: '3px',
+                      bgcolor: 'rgba(255, 255, 255, 0.4)',
+                      width: '100%',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: '-100%',
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                        animation: 'loadingBar 1.5s infinite ease-in-out',
+                      },
+                      '@keyframes loadingBar': {
+                        '0%': {
+                          left: '-100%'
+                        },
+                        '100%': {
+                          left: '100%'
+                        }
+                      }
+                    }}
+                  />
                 )}
               </Button>
             </CardContent>
@@ -565,6 +634,7 @@ export default function Dashboard() {
                           variant="outlined"
                           size="small"
                           onClick={() => joinRecentMeeting(meeting.id)}
+                          disabled={isJoining}
                           sx={{
                             borderRadius: 'var(--button-radius)',
                             borderColor: 'rgba(106, 17, 203, 0.2)',
@@ -572,10 +642,15 @@ export default function Dashboard() {
                             '&:hover': {
                               borderColor: 'var(--color-primary)',
                               backgroundColor: 'rgba(106, 17, 203, 0.05)',
-                            }
+                            },
+                            minWidth: '60px'
                           }}
                         >
-                          Join
+                          {isJoining ? (
+                            <CircularProgress size={16} color="inherit" />
+                          ) : (
+                            'Join'
+                          )}
                         </Button>
                       </Box>
                     </Box>
